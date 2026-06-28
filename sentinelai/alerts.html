@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SentinelAI – Alert Center</title>
+  <meta name="description" content="SentinelAI Alert Center – view, filter, and manage all wildlife and human anomaly alerts.">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .alert-card-full {
+      padding: 18px 20px;
+      border-radius: var(--radius-md);
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      display: grid;
+      grid-template-columns: 44px 1fr auto;
+      gap: 14px;
+      align-items: center;
+      transition: var(--transition);
+      position: relative;
+      overflow: hidden;
+      cursor: pointer;
+    }
+    .alert-card-full::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 4px;
+    }
+    .alert-card-full.critical::before { background: var(--red-alert); box-shadow: 0 0 10px var(--red-alert); }
+    .alert-card-full.high::before     { background: var(--orange-warn); }
+    .alert-card-full.medium::before   { background: var(--yellow-warn); }
+    .alert-card-full.low::before      { background: var(--green-safe); }
+    .alert-card-full:hover {
+      border-color: var(--border-glow);
+      background: rgba(0,212,255,0.04);
+      transform: translateX(3px);
+    }
+    .alert-card-full.critical:hover { border-color: rgba(255,45,85,0.4); }
+
+    .alert-card-icon-big {
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+    .alert-card-body { min-width: 0; }
+    .alert-card-title { font-size: 14px; font-weight: 700; color: var(--text-primary); margin-bottom: 5px; }
+    .alert-card-meta  {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: 'Share Tech Mono', monospace;
+    }
+    .alert-card-meta span { display: flex; align-items: center; gap: 4px; }
+    .alert-card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
+
+    .alert-count-row {
+      display: grid;
+      grid-template-columns: repeat(4,1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .count-box {
+      padding: 14px 16px;
+      text-align: center;
+      border-radius: var(--radius-md);
+    }
+    .count-box-val { font-family:'Orbitron',sans-serif; font-size:28px; font-weight:800; line-height:1; margin-bottom:4px; }
+    .count-box-lbl { font-size:10px; color:var(--text-muted); letter-spacing:1.5px; text-transform:uppercase; }
+
+    @media(max-width:768px){
+      .alert-card-full { grid-template-columns: 36px 1fr; }
+      .alert-card-right { display:none; }
+      .alert-count-row { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="app-shell" id="app-shell">
+  <div class="main-content">
+    <div class="page-content">
+
+      <!-- Header -->
+      <div class="page-header animate-fadeInUp">
+        <div class="page-header-left">
+          <div class="page-header-title">🚨 Alert Center</div>
+          <div class="page-header-sub">All System Alerts · Wildlife &amp; Human Anomaly Events</div>
+        </div>
+        <div class="flex gap-12">
+          <button class="btn btn-ghost btn-sm" id="btn-mark-all-read">✓ Mark All Read</button>
+          <button class="btn btn-danger btn-sm" id="btn-export-alerts">⬇ Export Alerts</button>
+        </div>
+      </div>
+
+      <!-- Alert Count Summary -->
+      <div class="alert-count-row stagger mb-20">
+        <div class="glass-card count-box danger">
+          <div class="count-box-val" style="color:var(--red-alert);" id="count-critical">5</div>
+          <div class="count-box-lbl">Critical</div>
+        </div>
+        <div class="glass-card count-box">
+          <div class="count-box-val" style="color:var(--orange-warn);" id="count-high">4</div>
+          <div class="count-box-lbl">High</div>
+        </div>
+        <div class="glass-card count-box">
+          <div class="count-box-val" style="color:var(--yellow-warn);" id="count-medium">3</div>
+          <div class="count-box-lbl">Medium</div>
+        </div>
+        <div class="glass-card count-box">
+          <div class="count-box-val" style="color:var(--green-safe);" id="count-resolved">14</div>
+          <div class="count-box-lbl">Resolved</div>
+        </div>
+      </div>
+
+      <!-- Filters Row -->
+      <div class="flex items-center justify-between mb-20 flex-wrap gap-12">
+        <div class="filter-tabs" id="alert-filter-tabs">
+          <button class="filter-tab active" data-filter="all">All Alerts</button>
+          <button class="filter-tab" data-filter="today">Today</button>
+          <button class="filter-tab" data-filter="week">This Week</button>
+          <button class="filter-tab" data-filter="wildlife">Wildlife</button>
+          <button class="filter-tab" data-filter="human">Human</button>
+        </div>
+        <div class="flex gap-8">
+          <div class="search-input-wrap" style="width:220px;">
+            <span class="search-icon">🔍</span>
+            <input type="text" class="search-input" id="alert-search" placeholder="Search alerts…">
+          </div>
+          <select id="sort-select" style="background:var(--bg-glass);border:1px solid var(--border-glass);color:var(--text-secondary);border-radius:var(--radius-sm);padding:8px 12px;font-size:12px;font-family:inherit;">
+            <option>Newest First</option>
+            <option>Oldest First</option>
+            <option>Severity ↑</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Alerts List -->
+      <div class="flex flex-col gap-10" id="alerts-full-list">
+        <!-- Populated by JS -->
+      </div>
+
+      <!-- Load More -->
+      <div class="text-center" style="margin-top:24px;">
+        <button class="btn btn-ghost" id="btn-load-more">Load More Alerts ↓</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="nav.js"></script>
+<script src="script.js"></script>
+<script>
+const ALL_ALERTS_DATA = [
+  { id:1,  title:'Tiger detected near village boundary',  emoji:'🐅', cam:'CAM-01', loc:'North Perimeter',  level:'critical', type:'wildlife', time:'14:22:05', date:'Today',     threat:'CRITICAL', cam_id:'CAM-01' },
+  { id:2,  title:'Fight detected – 2 persons involved',   emoji:'🥊', cam:'CAM-04', loc:'East Gate',        level:'critical', type:'human',    time:'14:15:33', date:'Today',     threat:'CRITICAL', cam_id:'CAM-04' },
+  { id:3,  title:'Elephant herd intrusion – 3 animals',   emoji:'🐘', cam:'CAM-07', loc:'South Forest',     level:'high',     type:'wildlife', time:'13:58:11', date:'Today',     threat:'HIGH',     cam_id:'CAM-07' },
+  { id:4,  title:'Running anomaly – single person',       emoji:'🏃', cam:'CAM-02', loc:'West Entry',       level:'medium',   type:'human',    time:'13:30:22', date:'Today',     threat:'MEDIUM',   cam_id:'CAM-02' },
+  { id:5,  title:'Vehicle in restricted zone',            emoji:'🚗', cam:'CAM-11', loc:'Road Crossing',    level:'critical', type:'human',    time:'13:10:44', date:'Today',     threat:'CRITICAL', cam_id:'CAM-11' },
+  { id:6,  title:'Leopard spotted on patrol route A',     emoji:'🐆', cam:'CAM-09', loc:'Patrol Route A',   level:'critical', type:'wildlife', time:'12:55:18', date:'Today',     threat:'CRITICAL', cam_id:'CAM-09' },
+  { id:7,  title:'Crowd formation detected – 8+ persons', emoji:'👥', cam:'CAM-03', loc:'Village Square',   level:'high',     type:'human',    time:'12:47:09', date:'Today',     threat:'HIGH',     cam_id:'CAM-03' },
+  { id:8,  title:'Lion detected at water hole',           emoji:'🦁', cam:'CAM-08', loc:'Water Hole',       level:'critical', type:'wildlife', time:'11:30:55', date:'Today',     threat:'CRITICAL', cam_id:'CAM-08' },
+  { id:9,  title:'Suspicious activity – loitering',       emoji:'👤', cam:'CAM-06', loc:'River Bank',       level:'high',     type:'human',    time:'11:05:22', date:'Today',     threat:'HIGH',     cam_id:'CAM-06' },
+  { id:10, title:'Bear spotted near forest edge',         emoji:'🐻', cam:'CAM-05', loc:'Hill Top',         level:'high',     type:'wildlife', time:'10:42:11', date:'Today',     threat:'HIGH',     cam_id:'CAM-05' },
+  { id:11, title:'Tiger – perimeter breach confirmed',    emoji:'🐅', cam:'CAM-01', loc:'North Perimeter',  level:'critical', type:'wildlife', time:'09:15:33', date:'Today',     threat:'CRITICAL', cam_id:'CAM-01' },
+  { id:12, title:'Running anomaly – group of 4',         emoji:'🏃', cam:'CAM-03', loc:'Village Square',   level:'medium',   type:'human',    time:'08:30:14', date:'Today',     threat:'MEDIUM',   cam_id:'CAM-03' },
+  { id:13, title:'Cheetah spotted near east boundary',    emoji:'🐾', cam:'CAM-12', loc:'East Boundary',    level:'high',     type:'wildlife', time:'20:55:00', date:'Yesterday', threat:'HIGH',     cam_id:'CAM-12' },
+  { id:14, title:'Vehicle convoy – restricted area',      emoji:'🚗', cam:'CAM-11', loc:'Road Crossing',    level:'critical', type:'human',    time:'19:22:40', date:'Yesterday', threat:'CRITICAL', cam_id:'CAM-11' },
+  { id:15, title:'Leopard – secondary detection',         emoji:'🐆', cam:'CAM-09', loc:'Patrol Route A',   level:'high',     type:'wildlife', time:'18:10:55', date:'Yesterday', threat:'HIGH',     cam_id:'CAM-09' },
+];
+
+let currentFilter = 'all';
+let currentSearch = '';
+
+function getBgBorder(level) {
+  const map = {
+    critical: ['rgba(255,45,85,0.15)', 'rgba(255,45,85,0.3)'],
+    high:     ['rgba(255,140,0,0.15)', 'rgba(255,140,0,0.3)'],
+    medium:   ['rgba(255,204,0,0.15)', 'rgba(255,204,0,0.3)'],
+    low:      ['rgba(0,255,136,0.12)', 'rgba(0,255,136,0.2)'],
+  };
+  return map[level] || map.low;
+}
+
+function renderAlerts() {
+  const list = document.getElementById('alerts-full-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  const filtered = ALL_ALERTS_DATA.filter(a => {
+    const matchFilter =
+      currentFilter === 'all'     ? true :
+      currentFilter === 'today'   ? a.date === 'Today' :
+      currentFilter === 'week'    ? true :
+      currentFilter === 'wildlife'? a.type === 'wildlife' :
+      currentFilter === 'human'   ? a.type === 'human' : true;
+
+    const matchSearch = currentSearch === '' ||
+      a.title.toLowerCase().includes(currentSearch) ||
+      a.loc.toLowerCase().includes(currentSearch) ||
+      a.cam.toLowerCase().includes(currentSearch);
+
+    return matchFilter && matchSearch;
+  });
+
+  if (filtered.length === 0) {
+    list.innerHTML = `
+      <div style="text-align:center;padding:60px 20px;color:var(--text-muted);">
+        <div style="font-size:48px;margin-bottom:12px;">🔍</div>
+        <div style="font-family:'Orbitron',sans-serif;font-size:13px;letter-spacing:2px;">NO ALERTS FOUND</div>
+        <div style="font-size:12px;margin-top:6px;">Try adjusting your filters or search terms</div>
+      </div>`;
+    return;
+  }
+
+  filtered.forEach((a, idx) => {
+    const [bg, br] = getBgBorder(a.level);
+    const threatColors = { CRITICAL:'var(--red-alert)', HIGH:'var(--orange-warn)', MEDIUM:'var(--yellow-warn)' };
+    const tc = threatColors[a.threat] || 'var(--green-safe)';
+    const card = document.createElement('div');
+    card.className = `alert-card-full ${a.level}`;
+    card.style.animationDelay = (idx * 0.04) + 's';
+    card.innerHTML = `
+      <div class="alert-card-icon-big" style="background:${bg};border:1px solid ${br};">${a.emoji}</div>
+      <div class="alert-card-body">
+        <div class="alert-card-title">${a.title}</div>
+        <div class="alert-card-meta">
+          <span>🕒 ${a.date} ${a.time}</span>
+          <span>📷 ${a.cam_id}</span>
+          <span>📍 ${a.loc}</span>
+          <span>🏷️ ${a.type === 'wildlife' ? 'Wildlife' : 'Human Anomaly'}</span>
+        </div>
+      </div>
+      <div class="alert-card-right">
+        <span class="badge badge-${a.level}" style="color:${tc};">
+          ${a.threat}
+        </span>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();showToast('Alert #${a.id}','Marked as reviewed','alert-info')">✓ Review</button>
+          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();showToast('Alert #${a.id}','Alert dismissed','alert-info')">✕</button>
+        </div>
+      </div>
+    `;
+    list.appendChild(card);
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderAlerts();
+
+  // Filter tabs
+  document.getElementById('alert-filter-tabs')?.addEventListener('click', (e) => {
+    const tab = e.target.closest('.filter-tab');
+    if (!tab) return;
+    document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentFilter = tab.dataset.filter;
+    renderAlerts();
+  });
+
+  // Search
+  document.getElementById('alert-search')?.addEventListener('input', function () {
+    currentSearch = this.value.toLowerCase().trim();
+    renderAlerts();
+  });
+
+  // Mark all read
+  document.getElementById('btn-mark-all-read')?.addEventListener('click', () => {
+    showToast('All alerts marked as read', '15 alerts updated', 'alert-info');
+    document.querySelectorAll('.alert-card-full').forEach(c => c.style.opacity = '0.5');
+  });
+
+  // Export
+  document.getElementById('btn-export-alerts')?.addEventListener('click', () => {
+    showToast('Exporting alerts…', 'CSV file prepared for download', 'alert-info');
+  });
+
+  // Live new alert appended
+  document.addEventListener('newAlert', (e) => {
+    const a = e.detail;
+    const isWildlife = a.title.includes('🐅')||a.title.includes('🐆')||a.title.includes('🦁')||a.title.includes('🐘')||a.title.includes('🐻')||a.title.includes('🐾');
+    const newEntry = {
+      id: Date.now(),
+      title: a.title.replace(/^[^\s]+\s/, ''),
+      emoji: a.title.split(' ')[0],
+      cam: a.loc.split('·')[1]?.trim() || 'CAM-00',
+      loc: a.loc.split('·')[0]?.trim() || 'Unknown',
+      level: a.level,
+      type: isWildlife ? 'wildlife' : 'human',
+      time: a.time + ':00',
+      date: 'Today',
+      threat: a.level.toUpperCase(),
+      cam_id: a.loc.split('·')[1]?.trim() || 'CAM-00',
+    };
+    ALL_ALERTS_DATA.unshift(newEntry);
+    const cEl = document.getElementById('count-critical');
+    if (a.level === 'critical' && cEl) cEl.textContent = parseInt(cEl.textContent) + 1;
+    renderAlerts();
+  });
+});
+</script>
+</body>
+</html>

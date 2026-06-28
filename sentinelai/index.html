@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SentinelAI – AI Surveillance Operations Center</title>
+  <meta name="description" content="SentinelAI: Military-grade AI-powered wildlife intrusion and human anomaly surveillance dashboard for security operations centers.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* ─── Landing Page Styles ─── */
+    .landing-wrap {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+      position: relative;
+      z-index: 1;
+      text-align: center;
+    }
+
+    .landing-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0, 212, 255, 0.08);
+      border: 1px solid rgba(0, 212, 255, 0.25);
+      border-radius: 40px;
+      padding: 6px 18px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 3px;
+      color: var(--blue-neon);
+      text-transform: uppercase;
+      margin-bottom: 28px;
+      animation: fadeInUp 0.6s ease forwards;
+    }
+
+    .landing-badge::before {
+      content: '';
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--green-safe);
+      box-shadow: 0 0 8px var(--green-safe);
+      animation: pulse-dot 2s infinite;
+    }
+
+    .landing-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(48px, 8vw, 90px);
+      font-weight: 900;
+      letter-spacing: 4px;
+      line-height: 1;
+      margin-bottom: 12px;
+      opacity: 0;
+      animation: fadeInUp 0.7s ease 0.1s forwards;
+      background: linear-gradient(135deg, #fff 0%, var(--blue-neon) 50%, #fff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .landing-tagline {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(12px, 2vw, 18px);
+      font-weight: 400;
+      letter-spacing: 6px;
+      color: var(--text-muted);
+      margin-bottom: 40px;
+      text-transform: uppercase;
+      opacity: 0;
+      animation: fadeInUp 0.7s ease 0.2s forwards;
+    }
+
+    .landing-desc {
+      max-width: 600px;
+      font-size: 16px;
+      color: var(--text-secondary);
+      line-height: 1.7;
+      margin: 0 auto 48px;
+      opacity: 0;
+      animation: fadeInUp 0.7s ease 0.3s forwards;
+    }
+
+    .landing-cta {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+      opacity: 0;
+      animation: fadeInUp 0.7s ease 0.4s forwards;
+      margin-bottom: 80px;
+    }
+
+    .btn-cta {
+      padding: 14px 36px;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      border-radius: var(--radius-md);
+      transition: var(--transition);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-cta-primary {
+      background: linear-gradient(135deg, var(--blue-accent), var(--blue-neon));
+      color: var(--bg-primary);
+      box-shadow: 0 0 40px rgba(0, 212, 255, 0.3);
+    }
+
+    .btn-cta-primary:hover {
+      box-shadow: 0 0 60px rgba(0, 212, 255, 0.5);
+      transform: translateY(-3px);
+    }
+
+    .btn-cta-secondary {
+      background: var(--bg-glass);
+      color: var(--blue-neon);
+      border: 1px solid var(--border-glow);
+      backdrop-filter: blur(12px);
+    }
+
+    .btn-cta-secondary:hover {
+      background: var(--bg-glass-light);
+      transform: translateY(-3px);
+      box-shadow: 0 0 20px rgba(0, 212, 255, 0.15);
+    }
+
+    .landing-features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      max-width: 900px;
+      width: 100%;
+      opacity: 0;
+      animation: fadeInUp 0.7s ease 0.5s forwards;
+      margin-bottom: 60px;
+    }
+
+    .feature-card {
+      padding: 24px;
+      text-align: left;
+    }
+
+    .feature-icon {
+      font-size: 36px;
+      margin-bottom: 12px;
+      display: block;
+    }
+
+    .feature-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 8px;
+      letter-spacing: 1px;
+    }
+
+    .feature-desc { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+
+    .landing-pages {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+      max-width: 900px;
+      width: 100%;
+      opacity: 0;
+      animation: fadeInUp 0.7s ease 0.6s forwards;
+    }
+
+    .page-link-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 18px;
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-md);
+      backdrop-filter: blur(12px);
+      transition: var(--transition);
+      text-decoration: none;
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .page-link-card:hover {
+      border-color: var(--border-glow);
+      color: var(--blue-neon);
+      background: var(--bg-glass-light);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(0, 212, 255, 0.1);
+    }
+
+    .page-link-icon { font-size: 20px; flex-shrink: 0; }
+
+    .landing-footer {
+      margin-top: 40px;
+      font-size: 11px;
+      color: var(--text-muted);
+      letter-spacing: 1px;
+    }
+
+    /* Animated rings */
+    .landing-rings {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    .ring {
+      position: absolute;
+      border-radius: 50%;
+      border: 1px solid rgba(0, 212, 255, 0.06);
+      transform: translate(-50%, -50%);
+      animation: ring-pulse 8s ease-in-out infinite;
+    }
+
+    .ring:nth-child(1) { width: 400px; height: 400px; animation-delay: 0s; }
+    .ring:nth-child(2) { width: 700px; height: 700px; animation-delay: 1.5s; }
+    .ring:nth-child(3) { width: 1000px; height: 1000px; animation-delay: 3s; }
+    .ring:nth-child(4) { width: 1300px; height: 1300px; animation-delay: 4.5s; }
+
+    @keyframes ring-pulse {
+      0%, 100% { border-color: rgba(0, 212, 255, 0.04); }
+      50% { border-color: rgba(0, 212, 255, 0.12); }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="particles-canvas"></canvas>
+
+  <div class="landing-wrap">
+    <div class="landing-rings">
+      <div class="ring"></div>
+      <div class="ring"></div>
+      <div class="ring"></div>
+      <div class="ring"></div>
+    </div>
+
+    <div class="landing-badge">🛡️ AI-Powered Surveillance System</div>
+
+    <h1 class="landing-title">SENTINELAI</h1>
+    <div class="landing-tagline">Advanced Surveillance Operations Center</div>
+
+    <p class="landing-desc">
+      Military-grade AI surveillance platform combining YOLO-powered wildlife intrusion detection
+      and autoencoder-based human anomaly analysis — protecting lives and ecosystems in real-time.
+    </p>
+
+    <div class="landing-cta">
+      <a href="dashboard.html" class="btn-cta btn-cta-primary">
+        🚀 Launch Dashboard
+      </a>
+      <a href="analytics.html" class="btn-cta btn-cta-secondary">
+        📊 View Analytics
+      </a>
+    </div>
+
+    <div class="landing-features stagger">
+      <div class="glass-card feature-card">
+        <span class="feature-icon">🐅</span>
+        <div class="feature-title">Wildlife Detection</div>
+        <div class="feature-desc">YOLO-powered detection for Tiger, Leopard, Lion, Bear, Elephant &amp; Cheetah with real-time confidence scoring.</div>
+      </div>
+      <div class="glass-card feature-card">
+        <span class="feature-icon">👁️</span>
+        <div class="feature-title">Human Anomaly AI</div>
+        <div class="feature-desc">Autoencoder reconstruction analysis detecting fighting, running, crowd formations &amp; vehicle intrusions.</div>
+      </div>
+      <div class="glass-card feature-card">
+        <span class="feature-icon">📡</span>
+        <div class="feature-title">Live CCTV Network</div>
+        <div class="feature-desc">Manage 24+ cameras across perimeters with real-time status monitoring &amp; geo-tagged alert mapping.</div>
+      </div>
+      <div class="glass-card feature-card">
+        <span class="feature-icon">⚡</span>
+        <div class="feature-title">Instant Alerts</div>
+        <div class="feature-desc">Sub-second threat classification with multi-channel notifications via email, SMS &amp; dashboard alerts.</div>
+      </div>
+    </div>
+
+    <div class="landing-pages">
+      <a href="dashboard.html"  class="page-link-card"><span class="page-link-icon">🏠</span> Dashboard</a>
+      <a href="wildlife.html"   class="page-link-card"><span class="page-link-icon">🐾</span> Wildlife</a>
+      <a href="anomaly.html"    class="page-link-card"><span class="page-link-icon">🔍</span> Anomaly</a>
+      <a href="alerts.html"     class="page-link-card"><span class="page-link-icon">🚨</span> Alerts</a>
+      <a href="analytics.html"  class="page-link-card"><span class="page-link-icon">📊</span> Analytics</a>
+      <a href="history.html"    class="page-link-card"><span class="page-link-icon">📋</span> History</a>
+      <a href="cameras.html"    class="page-link-card"><span class="page-link-icon">📷</span> Cameras</a>
+      <a href="settings.html"   class="page-link-card"><span class="page-link-icon">⚙️</span> Settings</a>
+    </div>
+
+    <div class="landing-footer">
+      &copy; 2026 SentinelAI · AI Surveillance Operations Platform · v2.4.1
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

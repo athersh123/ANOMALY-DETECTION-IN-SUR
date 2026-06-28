@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SentinelAI – Settings</title>
+  <meta name="description" content="SentinelAI Settings – configure AI model parameters, detection thresholds, notifications and system preferences.">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .settings-layout {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    @media(max-width:768px){ .settings-layout { grid-template-columns: 1fr; } }
+
+    .settings-nav {
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-lg);
+      backdrop-filter: blur(12px);
+      overflow: hidden;
+      position: sticky;
+      top: calc(var(--header-height) + 24px);
+    }
+    .settings-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: var(--transition);
+      border-left: 3px solid transparent;
+    }
+    .settings-nav-item:hover { color: var(--text-primary); background: rgba(0,212,255,0.04); }
+    .settings-nav-item.active {
+      color: var(--blue-neon);
+      background: rgba(0,212,255,0.06);
+      border-left-color: var(--blue-neon);
+    }
+    .settings-nav-item .sn-icon { font-size:16px; }
+
+    .settings-section { display: none; }
+    .settings-section.active { display: block; }
+    .settings-section-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+    }
+    .settings-section-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 24px; }
+
+    .slider-row { display: flex; align-items: center; gap: 14px; }
+    .slider-val {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--blue-neon);
+      min-width: 46px;
+      text-align: right;
+    }
+    .range-slider { flex: 1; }
+
+    .model-card {
+      padding: 16px 20px;
+      border-radius: var(--radius-md);
+      background: rgba(0,0,0,0.2);
+      border: 1px solid var(--border-glass);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      transition: var(--transition);
+      margin-bottom: 10px;
+    }
+    .model-card:hover { border-color: var(--border-glow); }
+    .model-card.active-model { border-color: rgba(0,255,136,0.3); background: rgba(0,255,136,0.04); }
+    .model-icon { font-size: 28px; flex-shrink: 0; }
+    .model-info { flex: 1; }
+    .model-name { font-family: 'Orbitron', sans-serif; font-size: 13px; font-weight: 700; color: var(--text-primary); }
+    .model-desc { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .model-meta {
+      display: flex; gap: 14px; margin-top: 8px;
+      font-family: 'Share Tech Mono', monospace; font-size: 10px;
+    }
+    .model-meta span { color: var(--text-muted); }
+    .model-meta strong { color: var(--blue-neon); }
+
+    .notif-channel {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 18px;
+      border-radius: var(--radius-md);
+      background: rgba(0,0,0,0.2);
+      border: 1px solid var(--border-glass);
+      margin-bottom: 10px;
+    }
+    .notif-icon { font-size: 24px; flex-shrink: 0; }
+    .notif-info { flex: 1; }
+    .notif-name { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+    .notif-desc { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .notif-status { font-family: 'Share Tech Mono', monospace; font-size: 11px; margin-top: 4px; }
+
+    .color-swatch {
+      width: 28px; height: 28px; border-radius: 6px; cursor: pointer;
+      border: 2px solid transparent; transition: var(--transition);
+    }
+    .color-swatch:hover, .color-swatch.selected { border-color: white; transform: scale(1.15); }
+
+    .about-pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--bg-glass-light); border: 1px solid var(--border-glass);
+      border-radius: 20px; padding: 6px 16px;
+      font-family: 'Share Tech Mono', monospace; font-size: 12px;
+      color: var(--blue-neon);
+    }
+  </style>
+</head>
+<body>
+<div class="app-shell" id="app-shell">
+  <div class="main-content">
+    <div class="page-content">
+
+      <!-- Header -->
+      <div class="page-header animate-fadeInUp">
+        <div class="page-header-left">
+          <div class="page-header-title">⚙️ Settings</div>
+          <div class="page-header-sub">System Configuration · AI Model Tuning · Notifications</div>
+        </div>
+        <div class="flex gap-12">
+          <button class="btn btn-ghost btn-sm" id="btn-reset-settings">↺ Reset Defaults</button>
+          <button class="btn btn-primary btn-sm" id="btn-save-settings">💾 Save Changes</button>
+        </div>
+      </div>
+
+      <div class="settings-layout">
+
+        <!-- Settings Nav Sidebar -->
+        <div class="settings-nav">
+          <div class="settings-nav-item active" data-section="model">
+            <span class="sn-icon">🤖</span> AI Models
+          </div>
+          <div class="settings-nav-item" data-section="detection">
+            <span class="sn-icon">🎯</span> Detection
+          </div>
+          <div class="settings-nav-item" data-section="notifications">
+            <span class="sn-icon">🔔</span> Notifications
+          </div>
+          <div class="settings-nav-item" data-section="cameras-s">
+            <span class="sn-icon">📷</span> Camera
+          </div>
+          <div class="settings-nav-item" data-section="display">
+            <span class="sn-icon">🎨</span> Display
+          </div>
+          <div class="settings-nav-item" data-section="security">
+            <span class="sn-icon">🔒</span> Security
+          </div>
+          <div class="settings-nav-item" data-section="about">
+            <span class="sn-icon">ℹ️</span> About
+          </div>
+        </div>
+
+        <!-- Settings Content -->
+        <div id="settings-content">
+
+          <!-- ─── AI MODEL SETTINGS ─── -->
+          <div class="settings-section active" id="section-model">
+            <div class="settings-section-title">🤖 AI Model Settings</div>
+            <div class="settings-section-sub">Configure YOLO wildlife detection and autoencoder human anomaly models</div>
+
+            <!-- YOLO Model Card -->
+            <div class="glass-card mb-20" style="padding:0;overflow:hidden;">
+              <div class="card-header">
+                <div class="card-title">🐾 Wildlife Detection – YOLO v8</div>
+                <span class="badge badge-online">Active</span>
+              </div>
+              <div class="card-body">
+                <div class="model-card active-model">
+                  <div class="model-icon">🐅</div>
+                  <div class="model-info">
+                    <div class="model-name">YOLOv8-Wildlife-Fine-Tuned</div>
+                    <div class="model-desc">Custom trained on 12,000 annotated wildlife images · 6 animal classes</div>
+                    <div class="model-meta">
+                      <span>Accuracy: <strong>97.2%</strong></span>
+                      <span>mAP@0.5: <strong>0.942</strong></span>
+                      <span>Inference: <strong>28ms</strong></span>
+                      <span>Size: <strong>87MB</strong></span>
+                    </div>
+                  </div>
+                  <span class="badge badge-online">✓ Loaded</span>
+                </div>
+
+                <div class="settings-group">
+                  <div class="settings-group-title">YOLO Confidence Threshold</div>
+                  <div class="settings-row">
+                    <div>
+                      <div class="settings-label">Detection Confidence</div>
+                      <div class="settings-desc">Minimum confidence for a detection to trigger an alert (0.1 – 1.0)</div>
+                    </div>
+                    <div class="slider-row" style="min-width:260px;">
+                      <input type="range" class="range-slider" id="yolo-conf" min="10" max="99" value="65"
+                        oninput="document.getElementById('yolo-conf-val').textContent=this.value+'%'">
+                      <div class="slider-val" id="yolo-conf-val">65%</div>
+                    </div>
+                  </div>
+                  <div class="settings-row">
+                    <div>
+                      <div class="settings-label">IoU Threshold (NMS)</div>
+                      <div class="settings-desc">Non-maximum suppression overlap threshold</div>
+                    </div>
+                    <div class="slider-row" style="min-width:260px;">
+                      <input type="range" class="range-slider" id="yolo-iou" min="10" max="90" value="45"
+                        oninput="document.getElementById('yolo-iou-val').textContent='0.'+this.value.toString().padStart(2,'0')">
+                      <div class="slider-val" id="yolo-iou-val">0.45</div>
+                    </div>
+                  </div>
+                  <div class="settings-row">
+                    <div>
+                      <div class="settings-label">Max Detections Per Frame</div>
+                      <div class="settings-desc">Limit simultaneous object detections</div>
+                    </div>
+                    <div class="slider-row" style="min-width:260px;">
+                      <input type="range" class="range-slider" id="yolo-maxdet" min="1" max="20" value="10"
+                        oninput="document.getElementById('yolo-maxdet-val').textContent=this.value">
+                      <div class="slider-val" id="yolo-maxdet-val">10</div>
+                    </div>
+                  </div>
+                  <div class="settings-row">
+                    <div>
+                      <div class="settings-label">Run on GPU</div>
+                      <div class="settings-desc">Use CUDA GPU acceleration for faster inference</div>
+                    </div>
+                    <label class="toggle-wrap">
+                      <input type="checkbox" class="toggle-input" id="toggle-gpu" checked>
+                      <div class="toggle-track"></div>
+                    </label>
+                  </div>
+                  <div class="settings-row">
+                    <div>
+                      <div class="settings-label">Half Precision (FP16)</div>
+                      <div class="settings-desc">Use 16-bit float for faster GPU inference</div>
+                    </div>
+                    <label class="toggle-wrap">
+                      <input type="checkbox" class="toggle-input" id="toggle-fp16" checked>
+                      <div class="toggle-track"></div>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Animal class toggles -->
+                <div class="settings-group">
+                  <div class="settings-group-title">Enabled Animal Classes</div>
+                  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+                    ${[['🐅','Tiger'],['🐆','Leopard'],['🦁','Lion'],['🐻','Bear'],['🐘','Elephant'],['🐾','Cheetah']].map(([e,n]) => `
+                    <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);background:rgba(0,0,0,0.2);border:1px solid var(--border-glass);">
+                      <span style="font-size:20px;">${e}</span>
+                      <span style="font-size:12px;font-weight:600;flex:1;">${n}</span>
+                      <label class="toggle-wrap">
+                        <input type="checkbox" class="toggle-input" checked>
+                        <div class="toggle-track"></div>
+                      </label>
+                    </div>`).join('')}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Autoencoder Model Card -->
+            <div class="glass-card mb-0" style="padding:0;overflow:hidden;">
+              <div class="card-header">
+                <div class="card-title">👁️ Human Anomaly – Autoencoder</div>
+                <span class="badge badge-online">Active</span>
+              </div>
+              <div class="card-body">
+                <div class="model-card active-model">
+                  <div class="model-icon">🧠</div>
+                  <div class="model-info">
+                    <div class="model-name">ConvAutoencoder-Anomaly-v3</div>
+                    <div class="model-desc">Convolutional autoencoder trained on normal activity patterns · Unsupervised</div>
+                    <div class="model-meta">
+                      <span>AUC-ROC: <strong>0.951</strong></span>
+                      <span>F1 Score: <strong>0.893</strong></span>
+                      <span>Latency: <strong>34ms</strong></span>
+                      <span>Size: <strong>45MB</strong></span>
+                    </div>
+                  </div>
+                  <span class="badge badge-online">✓ Loaded</span>
+                </div>
+
+                <div class="settings-group">
+                  <div class="settings-group-title">Anomaly Threshold</div>
+                  <div class="settings-row">
+                    <div>
+                      <div class="settings-label">Reconstruction Error Threshold</div>
+                      <div class="settings-desc">Frames with error above this value are classified as anomalous</div>
+                    </div>
+                    <div class="slider-row" style="min-width:260px;">
+                      <input type="range" class="range-slider" id="ae-threshold" min="10" max="90" value="35"
+                        oninput="document.getElementById('ae-threshold-val').textContent=(this.value/10000).toFixed(5)">
+                      <div class="slider-val" id="ae-threshold-val">0.00350</div>
+                    </div>
+                  </div>
+                  <div class="settings-row">
+                    <div>
+                      <div class="settings-label">Temporal Smoothing Window</div>
+                      <div class="settings-desc">Number of consecutive frames before confirming anomaly (reduces false positives)</div>
+                    </div>
+                    <div class="slider-row" style="min-width:260px;">
+                      <input type="range" class="range-slider" id="ae-smooth" min="1" max="30" value="10"
+                        oninput="document.getElementById('ae-smooth-val').textContent=this.value+'f'">
+                      <div class="slider-val" id="ae-smooth-val">10f</div>
+                    </div>
+                  </div>
+                  <div class="settings-row">
+                    <div>
+                      <div class="settings-label">Night Mode Adjustment</div>
+                      <div class="settings-desc">Raise threshold during low-light conditions to reduce noise</div>
+                    </div>
+                    <label class="toggle-wrap">
+                      <input type="checkbox" class="toggle-input" id="toggle-nightmode" checked>
+                      <div class="toggle-track"></div>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="settings-group">
+                  <div class="settings-group-title">Enabled Anomaly Classes</div>
+                  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+                    ${[['🏃','Running'],['🥊','Fighting'],['👥','Crowd'],['🚗','Vehicle'],['👤','Suspicious']].map(([e,n]) => `
+                    <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-md);background:rgba(0,0,0,0.2);border:1px solid var(--border-glass);">
+                      <span style="font-size:20px;">${e}</span>
+                      <span style="font-size:12px;font-weight:600;flex:1;">${n}</span>
+                      <label class="toggle-wrap">
+                        <input type="checkbox" class="toggle-input" checked>
+                        <div class="toggle-track"></div>
+                      </label>
+                    </div>`).join('')}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ─── DETECTION SETTINGS ─── -->
+          <div class="settings-section" id="section-detection">
+            <div class="settings-section-title">🎯 Detection Settings</div>
+            <div class="settings-section-sub">Configure general detection pipeline behavior and performance</div>
+            <div class="glass-card mb-20" style="padding:0;overflow:hidden;">
+              <div class="card-body">
+                <div class="settings-group">
+                  <div class="settings-group-title">Pipeline Configuration</div>
+                  <div class="settings-row">
+                    <div><div class="settings-label">Frame Sampling Rate</div><div class="settings-desc">Process every Nth frame for analysis</div></div>
+                    <div class="slider-row" style="min-width:200px;">
+                      <input type="range" class="range-slider" min="1" max="10" value="3" oninput="this.nextElementSibling.textContent='Every '+this.value+'f'">
+                      <div class="slider-val">Every 3f</div>
+                    </div>
+                  </div>
+                  <div class="settings-row">
+                    <div><div class="settings-label">Alert Cooldown Period</div><div class="settings-desc">Minimum time between repeated alerts for the same object</div></div>
+                    <div class="slider-row" style="min-width:200px;">
+                      <input type="range" class="range-slider" min="5" max="120" value="30" oninput="this.nextElementSibling.textContent=this.value+'s'">
+                      <div class="slider-val">30s</div>
+                    </div>
+                  </div>
+                  <div class="settings-row">
+                    <div><div class="settings-label">Enable Bounding Box Overlay</div><div class="settings-desc">Draw boxes around detected objects on feed</div></div>
+                    <label class="toggle-wrap"><input type="checkbox" class="toggle-input" checked><div class="toggle-track"></div></label>
+                  </div>
+                  <div class="settings-row">
+                    <div><div class="settings-label">Record on Alert</div><div class="settings-desc">Save 30-second clip when alert is triggered</div></div>
+                    <label class="toggle-wrap"><input type="checkbox" class="toggle-input" checked><div class="toggle-track"></div></label>
+                  </div>
+                  <div class="settings-row">
+                    <div><div class="settings-label">Auto-Dismiss Low Confidence</div><div class="settings-desc">Automatically dismiss alerts below 50% confidence</div></div>
+                    <label class="toggle-wrap"><input type="checkbox" class="toggle-input"><div class="toggle-track"></div></label>
+                  </div>
+                  <div class="settings-row">
+                    <div><div class="settings-label">Multi-Camera Correlation</div><div class="settings-desc">Link related events across multiple cameras</div></div>
+                    <label class="toggle-wrap"><input type="checkbox" class="toggle-input" checked><div class="toggle-track"></div></label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ─── NOTIFICATION SETTINGS ─── -->
+          <div class="settings-section" id="section-notifications">
+            <div class="settings-section-title">🔔 Notification Settings</div>
+            <div class="settings-section-sub">Configure how and when alerts are delivered to your team</div>
+
+            <!-- Alert Level Filters -->
+            <div class="glass-card mb-20" style="padding:0;overflow:hidden;">
+              <div class="card-header"><div class="card-title">⚡ Alert Thresholds</div></div>
+              <div class="card-body">
+                <div class="settings-group">
+                  <div class="settings-group-title">Send Notifications For</div>
+                  <div class="settings-row"><div><div class="settings-label">🔴 Critical Alerts</div><div class="settings-desc">Tiger, Lion, Vehicle Intrusion, Fighting</div></div><label class="toggle-wrap"><input type="checkbox" class="toggle-input" checked><div class="toggle-track"></div></label></div>
+                  <div class="settings-row"><div><div class="settings-label">🟠 High Alerts</div><div class="settings-desc">Leopard, Bear, Elephant, Crowd Formation</div></div><label class="toggle-wrap"><input type="checkbox" class="toggle-input" checked><div class="toggle-track"></div></label></div>
+                  <div class="settings-row"><div><div class="settings-label">🟡 Medium Alerts</div><div class="settings-desc">Running anomaly, Suspicious Activity</div></div><label class="toggle-wrap"><input type="checkbox" class="toggle-input"><div class="toggle-track"></div></label></div>
+                  <div class="settings-row"><div><div class="settings-label">🟢 Low / Info Alerts</div><div class="settings-desc">Camera status, system events</div></div><label class="toggle-wrap"><input type="checkbox" class="toggle-input"><div class="toggle-track"></div></label></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Channels -->
+            <div class="glass-card mb-20" style="padding:0;overflow:hidden;">
+              <div class="card-header"><div class="card-title">📡 Notification Channels</div></div>
+              <div class="card-body">
+                <div class="notif-channel">
+                  <div class="notif-icon">📧</div>
+                  <div class="notif-info">
+                    <div class="notif-name">Email Alerts</div>
+                    <div class="notif-desc">Send alert emails to configured recipients</div>
+                    <div class="notif-status" style="color:var(--green-safe);">✓ Configured · admin@sentinelai.io</div>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end;">
+                    <label class="toggle-wrap"><input type="checkbox" class="toggle-input" id="toggle-email" checked><div class="toggle-track"></div></label>
+                    <button class="btn btn-ghost btn-sm" onclick="showToast('Email Settings','Email configuration dialog opened','alert-info')">Configure</button>
+                  </div>
+                </div>
+
+                <div class="notif-channel">
+                  <div class="notif-icon">📱</div>
+                  <div class="notif-info">
+                    <div class="notif-name">SMS Alerts</div>
+                    <div class="notif-desc">Send SMS to emergency contact numbers via Twilio</div>
+                    <div class="notif-status" style="color:var(--green-safe);">✓ Configured · +91 98xxx xxxxx</div>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end;">
+                    <label class="toggle-wrap"><input type="checkbox" class="toggle-input" id="toggle-sms" checked><div class="toggle-track"></div></label>
+                    <button class="btn btn-ghost btn-sm" onclick="showToast('SMS Settings','SMS configuration dialog opened','alert-info')">Configure</button>
+                  </div>
+                </div>
+
+                <div class="notif-channel">
+                  <div class="notif-icon">📟</div>
+                  <div class="notif-info">
+                    <div class="notif-name">WhatsApp Alerts</div>
+                    <div class="notif-desc">Send WhatsApp messages via WhatsApp Business API</div>
+                    <div class="notif-status" style="color:var(--text-muted);">Not configured</div>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end;">
+                    <label class="toggle-wrap"><input type="checkbox" class="toggle-input"><div class="toggle-track"></div></label>
+                    <button class="btn btn-ghost btn-sm" onclick="showToast('WhatsApp Setup','Enter WhatsApp API token to configure','alert-info')">Setup</button>
+                  </div>
+                </div>
+
+                <div class="notif-channel">
+                  <div class="notif-icon">🔗</div>
+                  <div class="notif-info">
+                    <div class="notif-name">Webhook / API Push</div>
+                    <div class="notif-desc">POST JSON payload to your custom endpoint on each alert</div>
+                    <div class="notif-status" style="color:var(--text-muted);">Not configured</div>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end;">
+                    <label class="toggle-wrap"><input type="checkbox" class="toggle-input"><div class="toggle-track"></div></label>
+                    <button class="btn btn-ghost btn-sm" onclick="showToast('Webhook Setup','Enter webhook URL to configure','alert-info')">Setup</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Quiet Hours -->
+            <div class="glass-card mb-0" style="padding:0;overflow:hidden;">
+              <div class="card-header"><div class="card-title">🌙 Quiet Hours</div></div>
+              <div class="card-body">
+                <div class="settings-row">
+                  <div><div class="settings-label">Enable Quiet Hours</div><div class="settings-desc">Suppress non-critical notifications during specified hours</div></div>
+                  <label class="toggle-wrap"><input type="checkbox" class="toggle-input"><div class="toggle-track"></div></label>
+                </div>
+                <div class="settings-row">
+                  <div><div class="settings-label">Quiet Hours Window</div><div class="settings-desc">Start and end time for suppressed notifications</div></div>
+                  <div style="display:flex;gap:10px;align-items:center;">
+                    <input type="time" value="22:00" style="background:var(--bg-glass);border:1px solid var(--border-glass);color:var(--text-primary);border-radius:var(--radius-sm);padding:7px 10px;font-family:inherit;font-size:12px;color-scheme:dark;">
+                    <span style="color:var(--text-muted);">to</span>
+                    <input type="time" value="06:00" style="background:var(--bg-glass);border:1px solid var(--border-glass);color:var(--text-primary);border-radius:var(--radius-sm);padding:7px 10px;font-family:inherit;font-size:12px;color-scheme:dark;">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ─── CAMERA SETTINGS ─── -->
+          <div class="settings-section" id="section-cameras-s">
+            <div class="settings-section-title">📷 Camera Settings</div>
+            <div class="settings-section-sub">Global CCTV network configuration and defaults</div>
+            <div class="glass-card mb-0" style="padding:0;overflow:hidden;">
+              <div class="card-body">
+                <div class="settings-group">
+                  <div class="settings-group-title">Recording &amp; Storage</div>
+                  <div class="settings-row"><div><div class="settings-label">Continuous Recording</div><div class="settings-desc">Record all cameras 24/7 to network storage</div></div><label class="toggle-wrap"><input type="checkbox" class="toggle-input" checked><div class="toggle-track"></div></label></div>
+                  <div class="settings-row"><div><div class="settings-label">Recording Quality</div></div>
+                    <select style="background:var(--bg-glass);border:1px solid var(--border-glass);color:var(--text-secondary);border-radius:var(--radius-sm);padding:7px 12px;font-family:inherit;font-size:12px;">
+                      <option>1080p (HD)</option><option>4K (Ultra HD)</option><option>720p</option>
+                    </select>
+                  </div>
+                  <div class="settings-row"><div><div class="settings-label">Retention Period</div><div class="settings-desc">Delete recordings older than selected period</div></div>
+                    <select style="background:var(--bg-glass);border:1px solid var(--border-glass);color:var(--text-secondary);border-radius:var(--radius-sm);padding:7px 12px;font-family:inherit;font-size:12px;">
+                      <option>30 Days</option><option>60 Days</option><option>90 Days</option><option>6 Months</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="settings-group">
+                  <div class="settings-group-title">Feed Settings</div>
+                  <div class="settings-row"><div><div class="settings-label">Default FPS Target</div></div>
+                    <div class="slider-row" style="min-width:200px;">
+                      <input type="range" class="range-slider" min="5" max="60" value="30" oninput="this.nextElementSibling.textContent=this.value+' fps'">
+                      <div class="slider-val">30 fps</div>
+                    </div>
+                  </div>
+                  <div class="settings-row"><div><div class="settings-label">Night Vision Auto-Switch</div><div class="settings-desc">Automatically enable IR mode at low light levels</div></div><label class="toggle-wrap"><input type="checkbox" class="toggle-input" checked><div class="toggle-track"></div></label></div>
+                  <div class="settings-row"><div><div class="settings-label">Offline Camera Auto-Ping</div><div class="settings-desc">Automatically attempt reconnect every 60 seconds</div></div><label class="toggle-wrap"><input type="checkbox" class="toggle-input" checked><div class="toggle-track"></div></label></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ─── DISPLAY SETTINGS ─── -->
+          <div class="settings-section" id="section-display">
+            <div class="settings-section-title">🎨 Display Settings</div>
+            <div class="settings-section-sub">Customize dashboard appearance and layout preferences</div>
+            <div class="glass-card mb-0" style="padding:0;overflow:hidden;">
+              <div class="card-body">
+                <div class="settings-group">
+                  <div class="settings-group-title">Theme &amp; Appearance</div>
+                  <div class="settings-row">
+                    <div><div class="settings-label">Dashboard Theme</div></div>
+                    <div style="display:flex;gap:8px;">
+                      <div class="color-swatch selected" style="background:linear-gradient(135deg,#020b18,#0090ff);" title="Cyber Blue (Current)"></div>
+                      <div class="color-swatch" style="background:linear-gradient(135deg,#0a0a0a,#7c3aed);" title="Deep Purple"></div>
+                      <div class="color-swatch" style="background:linear-gradient(135deg,#0a0a0a,#10b981);" title="Matrix Green"></div>
+                      <div class="color-swatch" style="background:linear-gradient(135deg,#0a0a0a,#ef4444);" title="Alert Red"></div>
+                    </div>
+                  </div>
+                  <div class="settings-row"><div><div class="settings-label">Sidebar Collapsed by Default</div></div><label class="toggle-wrap"><input type="checkbox" class="toggle-input"><div class="toggle-track"></div></label></div>
+                  <div class="settings-row"><div><div class="settings-label">Compact Card Mode</div><div class="settings-desc">Reduce card padding for more information density</div></div><label class="toggle-wrap"><input type="checkbox" class="toggle-input"><div class="toggle-track"></div></label></div>
+                  <div class="settings-row"><div><div class="settings-label">Show Particle Effects</div><div class="settings-desc">Background particle animations (disable for performance)</div></div><label class="toggle-wrap"><input type="checkbox" class="toggle-input" checked><div class="toggle-track"></div></label></div>
+                  <div class="settings-row"><div><div class="settings-label">Animate Statistics</div><div class="settings-desc">Animate counter values on page load</div></div><label class="toggle-wrap"><input type="checkbox" class="toggle-input" checked><div class="toggle-track"></div></label></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ─── SECURITY SETTINGS ─── -->
+          <div class="settings-section" id="section-security">
+            <div class="settings-section-title">🔒 Security Settings</div>
+            <div class="settings-section-sub">Manage access control, authentication and audit logging</div>
+            <div class="glass-card mb-0" style="padding:0;overflow:hidden;">
+              <div class="card-body">
+                <div class="settings-group">
+                  <div class="settings-group-title">Authentication</div>
+                  <div class="settings-row"><div><div class="settings-label">Two-Factor Authentication</div><div class="settings-desc">Require 2FA for all admin logins</div></div><label class="toggle-wrap"><input type="checkbox" class="toggle-input" checked><div class="toggle-track"></div></label></div>
+                  <div class="settings-row"><div><div class="settings-label">Session Timeout</div></div>
+                    <select style="background:var(--bg-glass);border:1px solid var(--border-glass);color:var(--text-secondary);border-radius:var(--radius-sm);padding:7px 12px;font-family:inherit;font-size:12px;">
+                      <option>30 Minutes</option><option>1 Hour</option><option>4 Hours</option><option>8 Hours</option>
+                    </select>
+                  </div>
+                  <div class="settings-row"><div><div class="settings-label">Audit Logging</div><div class="settings-desc">Log all user actions and system events</div></div><label class="toggle-wrap"><input type="checkbox" class="toggle-input" checked><div class="toggle-track"></div></label></div>
+                  <div class="settings-row"><div><div class="settings-label">IP Allowlist</div><div class="settings-desc">Restrict dashboard access to specific IP ranges</div></div><label class="toggle-wrap"><input type="checkbox" class="toggle-input"><div class="toggle-track"></div></label></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ─── ABOUT ─── -->
+          <div class="settings-section" id="section-about">
+            <div class="settings-section-title">ℹ️ About SentinelAI</div>
+            <div class="settings-section-sub">System information and software details</div>
+            <div class="glass-card mb-20" style="padding:28px;text-align:center;">
+              <div style="font-size:64px;margin-bottom:12px;filter:drop-shadow(0 0 20px rgba(0,212,255,0.5));">🛡️</div>
+              <div style="font-family:'Orbitron',sans-serif;font-size:28px;font-weight:900;color:var(--blue-neon);letter-spacing:4px;margin-bottom:4px;">SENTINELAI</div>
+              <div style="font-size:12px;color:var(--text-muted);letter-spacing:3px;margin-bottom:20px;">AI SURVEILLANCE OPERATIONS CENTER</div>
+              <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:24px;">
+                <div class="about-pill">v2.4.1</div>
+                <div class="about-pill">YOLO v8.2</div>
+                <div class="about-pill">Python 3.11</div>
+                <div class="about-pill">PyTorch 2.2</div>
+                <div class="about-pill">OpenCV 4.9</div>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:500px;margin:0 auto;">
+                <div style="padding:14px;background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.15);border-radius:var(--radius-md);">
+                  <div style="font-family:'Orbitron',sans-serif;font-size:18px;font-weight:800;color:var(--blue-neon);">6</div>
+                  <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Animal Classes</div>
+                </div>
+                <div style="padding:14px;background:rgba(255,45,85,0.06);border:1px solid rgba(255,45,85,0.15);border-radius:var(--radius-md);">
+                  <div style="font-family:'Orbitron',sans-serif;font-size:18px;font-weight:800;color:var(--red-alert);">5</div>
+                  <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Anomaly Types</div>
+                </div>
+                <div style="padding:14px;background:rgba(0,255,136,0.06);border:1px solid rgba(0,255,136,0.15);border-radius:var(--radius-md);">
+                  <div style="font-family:'Orbitron',sans-serif;font-size:18px;font-weight:800;color:var(--green-safe);">24</div>
+                  <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Camera Nodes</div>
+                </div>
+              </div>
+            </div>
+            <div class="glass-card" style="padding:0;overflow:hidden;">
+              <div class="card-header"><div class="card-title">📦 System Information</div></div>
+              <div class="card-body">
+                <div class="settings-row"><div class="settings-label">Platform</div><div style="font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--blue-neon);">Windows 11 / Ubuntu 22.04 LTS</div></div>
+                <div class="settings-row"><div class="settings-label">GPU</div><div style="font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--blue-neon);">NVIDIA RTX 3080 · CUDA 12.1</div></div>
+                <div class="settings-row"><div class="settings-label">RAM</div><div style="font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--blue-neon);">32 GB DDR5</div></div>
+                <div class="settings-row"><div class="settings-label">Storage</div><div style="font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--blue-neon);">2TB NVMe SSD · 68% Used</div></div>
+                <div class="settings-row"><div class="settings-label">Network</div><div style="font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--green-safe);">Gigabit LAN · All Cameras Reachable</div></div>
+                <div class="settings-row"><div class="settings-label">Last Updated</div><div style="font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--text-muted);">24 Jun 2026 · 09:00 IST</div></div>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- end settings-content -->
+      </div><!-- end settings-layout -->
+
+    </div>
+  </div>
+</div>
+
+<script src="nav.js"></script>
+<script src="script.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  // Section navigation
+  const navItems = document.querySelectorAll('.settings-nav-item');
+  const sections = document.querySelectorAll('.settings-section');
+
+  navItems.forEach(item => {
+    item.addEventListener('click', () => {
+      navItems.forEach(n => n.classList.remove('active'));
+      sections.forEach(s => s.classList.remove('active'));
+      item.classList.add('active');
+      const secId = 'section-' + item.dataset.section;
+      const sec = document.getElementById(secId);
+      if (sec) sec.classList.add('active');
+    });
+  });
+
+  // Load settings from backend
+  function fetchSettings() {
+    fetch('http://127.0.0.1:5000/api/settings')
+      .then(res => res.json())
+      .then(settings => {
+        if (settings.yolo_confidence !== undefined) {
+          const pct = Math.round(settings.yolo_confidence * 100);
+          const slider = document.getElementById('yolo-conf');
+          if (slider) {
+            slider.value = pct;
+            document.getElementById('yolo-conf-val').textContent = pct + '%';
+          }
+        }
+        if (settings.anomaly_anomaly_threshold !== undefined) {
+          const rawVal = parseFloat(settings.anomaly_anomaly_threshold);
+          const sliderVal = Math.round(rawVal * 10000);
+          const slider = document.getElementById('ae-threshold');
+          if (slider) {
+            slider.value = sliderVal;
+            document.getElementById('ae-threshold-val').textContent = rawVal.toFixed(5);
+          }
+        }
+      })
+      .catch(err => console.error("Error loading settings:", err));
+  }
+
+  fetchSettings();
+
+  // Save button
+  document.getElementById('btn-save-settings')?.addEventListener('click', () => {
+    const yoloConf = parseInt(document.getElementById('yolo-conf').value) / 100;
+    const aeThresh = parseInt(document.getElementById('ae-threshold').value) / 10000;
+
+    fetch('http://127.0.0.1:5000/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        yolo_confidence: yoloConf,
+        anomaly_anomaly_threshold: aeThresh
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        showToast('Settings Saved', 'All configuration changes applied successfully', 'alert-info');
+      } else {
+        showToast('Save Failed', data.message || 'Error saving settings', 'alert-high');
+      }
+    })
+    .catch(err => {
+      showToast('Save Failed', 'Could not connect to backend', 'alert-high');
+    });
+  });
+
+  // Reset button
+  document.getElementById('btn-reset-settings')?.addEventListener('click', () => {
+    if (confirm('Reset all settings to default values?')) {
+      fetch('http://127.0.0.1:5000/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          yolo_confidence: 0.40,
+          anomaly_anomaly_threshold: 0.00350
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          fetchSettings();
+          showToast('Settings Reset', 'All settings restored to factory defaults', 'alert-info');
+        } else {
+          showToast('Reset Failed', data.message || 'Error resetting settings', 'alert-high');
+        }
+      })
+      .catch(() => {
+        showToast('Reset Failed', 'Could not connect to backend', 'alert-high');
+      });
+    }
+  });
+
+  // Color swatches
+  document.querySelectorAll('.color-swatch').forEach(sw => {
+    sw.addEventListener('click', () => {
+      document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+      sw.classList.add('selected');
+      showToast('Theme Updated', sw.title + ' theme applied', 'alert-info');
+    });
+  });
+});
+</script>
+</body>
+</html>

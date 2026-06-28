@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SentinelAI – Camera Management</title>
+  <meta name="description" content="SentinelAI Camera Management – monitor, add, and remove CCTV cameras across the surveillance network.">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .cam-grid-full {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 16px;
+    }
+
+    .cam-card-full {
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      transition: var(--transition);
+      cursor: pointer;
+      position: relative;
+    }
+    .cam-card-full:hover {
+      border-color: var(--border-glow);
+      transform: translateY(-4px);
+      box-shadow: 0 16px 40px rgba(0,0,0,0.5), 0 0 20px rgba(0,212,255,0.12);
+    }
+    .cam-card-full.offline { border-color: rgba(255,45,85,0.25); }
+    .cam-card-full.offline:hover { box-shadow: 0 16px 40px rgba(0,0,0,0.5), 0 0 20px rgba(255,45,85,0.1); }
+
+    .cam-thumb-full {
+      width: 100%;
+      aspect-ratio: 16/10;
+      position: relative;
+      overflow: hidden;
+      background: #04080e;
+    }
+    .cam-thumb-full img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 0.4s ease;
+    }
+    .cam-card-full:hover .cam-thumb-full img { transform: scale(1.04); }
+    .cam-thumb-full .thumb-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, transparent 40%, rgba(0,0,0,0.5) 100%);
+    }
+    .cam-status-badge-thumb {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+    }
+    .cam-alert-badge-thumb {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+    }
+    .cam-live-dot {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 9px;
+      color: var(--red-alert);
+    }
+    .cam-info-panel {
+      padding: 12px 14px;
+    }
+    .cam-info-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .cam-id-label { font-family:'Orbitron',sans-serif; font-size:12px; font-weight:700; color:var(--blue-neon); }
+    .cam-location-label { font-size:11px; color:var(--text-muted); margin-bottom:10px; }
+    .cam-stats-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .cam-stat-mini {
+      flex: 1;
+      background: rgba(0,0,0,0.3);
+      border: 1px solid rgba(0,212,255,0.08);
+      border-radius: 6px;
+      padding: 6px 8px;
+      text-align: center;
+    }
+    .cam-stat-mini-val { font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--blue-neon); }
+    .cam-stat-mini-lbl { font-size:9px; color:var(--text-muted); margin-top:2px; }
+    .cam-actions { display:flex; gap:6px; }
+
+    /* Add Camera Modal */
+    .add-cam-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(6px);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+    .add-cam-modal.open { opacity:1; pointer-events:all; }
+    .add-cam-panel {
+      background: rgba(4,14,32,0.98);
+      border: 1px solid var(--border-glow);
+      border-radius: var(--radius-xl);
+      padding: 28px;
+      width: 100%;
+      max-width: 500px;
+      box-shadow: 0 40px 80px rgba(0,0,0,0.8);
+      transform: translateY(20px);
+      transition: transform 0.3s ease;
+    }
+    .add-cam-modal.open .add-cam-panel { transform: translateY(0); }
+
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 11px; font-weight: 700; color: var(--text-muted); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 6px; }
+    .form-input {
+      width: 100%;
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      color: var(--text-primary);
+      font-size: 13px;
+      font-family: inherit;
+      transition: var(--transition);
+    }
+    .form-input:focus { border-color: var(--border-glow); box-shadow: 0 0 10px rgba(0,212,255,0.1); }
+    .form-input::placeholder { color: var(--text-muted); }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  </style>
+</head>
+<body>
+<div class="app-shell" id="app-shell">
+  <div class="main-content">
+    <div class="page-content">
+
+      <!-- Header -->
+      <div class="page-header animate-fadeInUp">
+        <div class="page-header-left">
+          <div class="page-header-title">📷 Camera Management</div>
+          <div class="page-header-sub">CCTV Network · 24 Cameras · Real-Time Status</div>
+        </div>
+        <div class="flex gap-12">
+          <button class="btn btn-ghost btn-sm" id="btn-refresh-cams">↻ Refresh All</button>
+          <button class="btn btn-primary btn-sm" id="btn-add-camera">+ Add Camera</button>
+        </div>
+      </div>
+
+      <!-- Network Status Row -->
+      <div class="stats-grid stagger mb-24" style="grid-template-columns:repeat(5,1fr);">
+        <div class="glass-card stat-card">
+          <div class="stat-icon blue">📷</div>
+          <div class="stat-value blue">24</div>
+          <div class="stat-label">Total Cameras</div>
+        </div>
+        <div class="glass-card stat-card">
+          <div class="stat-icon green">✅</div>
+          <div class="stat-value green">22</div>
+          <div class="stat-label">Online</div>
+        </div>
+        <div class="glass-card stat-card danger">
+          <div class="stat-icon red">❌</div>
+          <div class="stat-value red">2</div>
+          <div class="stat-label">Offline</div>
+        </div>
+        <div class="glass-card stat-card">
+          <div class="stat-icon yellow">⚡</div>
+          <div class="stat-value yellow">7</div>
+          <div class="stat-label">Alerting</div>
+        </div>
+        <div class="glass-card stat-card">
+          <div class="stat-icon blue">📊</div>
+          <div class="stat-value blue">91.7<span style="font-size:14px">%</span></div>
+          <div class="stat-label">Network Health</div>
+        </div>
+      </div>
+
+      <!-- Filters + Search -->
+      <div class="flex items-center justify-between mb-20 flex-wrap gap-12">
+        <div class="filter-tabs" id="cam-filter-tabs">
+          <button class="filter-tab active" data-filter="all">All (24)</button>
+          <button class="filter-tab" data-filter="online">Online (22)</button>
+          <button class="filter-tab" data-filter="offline">Offline (2)</button>
+          <button class="filter-tab" data-filter="alerting">Alerting (7)</button>
+        </div>
+        <div class="search-input-wrap" style="width:220px;">
+          <span class="search-icon">🔍</span>
+          <input type="text" class="search-input" id="cam-search" placeholder="Search cameras…">
+        </div>
+      </div>
+
+      <!-- Camera Grid -->
+      <div class="cam-grid-full stagger" id="cam-grid-full">
+        <!-- Built by JS -->
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Add Camera Modal -->
+<div class="add-cam-modal" id="add-cam-modal" onclick="closeAddModal(event)">
+  <div class="add-cam-panel">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;">
+      <div>
+        <div style="font-family:'Orbitron',sans-serif;font-size:15px;font-weight:700;color:var(--text-primary);">Add New Camera</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Register a new CCTV node to the network</div>
+      </div>
+      <span style="font-size:22px;color:var(--text-muted);cursor:pointer;" onclick="document.getElementById('add-cam-modal').classList.remove('open')">✕</span>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Camera ID</label>
+        <input type="text" class="form-input" id="new-cam-id" placeholder="e.g. CAM-25">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Camera Type</label>
+        <select class="form-input" id="new-cam-type">
+          <option>PTZ Camera</option>
+          <option>Fixed Camera</option>
+          <option>Thermal Camera</option>
+          <option>IR Camera</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Location Name</label>
+      <input type="text" class="form-input" id="new-cam-location" placeholder="e.g. South Gate – Boundary B">
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Latitude</label>
+        <input type="text" class="form-input" id="new-cam-lat" placeholder="12.9716">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Longitude</label>
+        <input type="text" class="form-input" id="new-cam-lng" placeholder="77.5946">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">RTSP Stream URL</label>
+      <input type="text" class="form-input" id="new-cam-url" placeholder="rtsp://192.168.1.100:554/stream">
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Resolution</label>
+        <select class="form-input">
+          <option>1080p Full HD</option>
+          <option>4K Ultra HD</option>
+          <option>720p HD</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">AI Detection</label>
+        <select class="form-input">
+          <option>Wildlife + Human</option>
+          <option>Wildlife Only</option>
+          <option>Human Only</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:4px;">
+      <button class="btn btn-primary" style="flex:1;" id="btn-confirm-add-cam">+ Register Camera</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('add-cam-modal').classList.remove('open')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script src="nav.js"></script>
+<script src="script.js"></script>
+<script>
+const CAMERA_DATA = [
+  { id:'CAM-01', loc:'North Perimeter',  status:'online',  alerting:true,  fps:30, uptime:'99.8%', alerts:3, type:'Thermal IR', seed:'forest1' },
+  { id:'CAM-02', loc:'West Entry',       status:'online',  alerting:true,  fps:25, uptime:'98.2%', alerts:1, type:'Fixed HD',   seed:'gate2' },
+  { id:'CAM-03', loc:'Village Square',   status:'online',  alerting:false, fps:30, uptime:'99.5%', alerts:0, type:'PTZ 4K',     seed:'village5' },
+  { id:'CAM-04', loc:'East Gate',        status:'online',  alerting:true,  fps:30, uptime:'97.8%', alerts:2, type:'Fixed HD',   seed:'gate2' },
+  { id:'CAM-05', loc:'Hill Top',         status:'offline', alerting:false, fps:0,  uptime:'0%',    alerts:0, type:'Fixed HD',   seed:'hill9' },
+  { id:'CAM-06', loc:'River Bank',       status:'online',  alerting:true,  fps:25, uptime:'99.1%', alerts:1, type:'PTZ HD',     seed:'river10' },
+  { id:'CAM-07', loc:'South Forest',     status:'online',  alerting:true,  fps:30, uptime:'98.6%', alerts:2, type:'Thermal IR', seed:'jungle3' },
+  { id:'CAM-08', loc:'Water Hole',       status:'online',  alerting:true,  fps:30, uptime:'99.7%', alerts:1, type:'Night Vision',seed:'water6' },
+  { id:'CAM-09', loc:'Patrol Route A',   status:'online',  alerting:false, fps:25, uptime:'99.3%', alerts:0, type:'Fixed HD',   seed:'patrol11' },
+  { id:'CAM-10', loc:'Patrol Route B',   status:'offline', alerting:false, fps:0,  uptime:'0%',    alerts:0, type:'Fixed HD',   seed:'path12' },
+  { id:'CAM-11', loc:'Road Crossing',    status:'online',  alerting:true,  fps:30, uptime:'98.4%', alerts:1, type:'PTZ 4K',     seed:'road8' },
+  { id:'CAM-12', loc:'East Boundary',    status:'online',  alerting:false, fps:25, uptime:'97.9%', alerts:0, type:'Fixed HD',   seed:'tree7' },
+  { id:'CAM-13', loc:'North Gate',       status:'online',  alerting:false, fps:30, uptime:'99.6%', alerts:0, type:'Thermal IR', seed:'wild4' },
+  { id:'CAM-14', loc:'South Boundary',   status:'online',  alerting:false, fps:25, uptime:'98.8%', alerts:0, type:'Fixed HD',   seed:'forest1' },
+  { id:'CAM-15', loc:'Creek Watch',      status:'online',  alerting:false, fps:30, uptime:'99.4%', alerts:0, type:'Night Vision',seed:'river10' },
+  { id:'CAM-16', loc:'Bamboo Grove',     status:'online',  alerting:false, fps:25, uptime:'98.1%', alerts:0, type:'Fixed HD',   seed:'jungle3' },
+  { id:'CAM-17', loc:'Village West',     status:'online',  alerting:false, fps:30, uptime:'99.0%', alerts:0, type:'PTZ HD',     seed:'village5' },
+  { id:'CAM-18', loc:'Forest Trail A',   status:'online',  alerting:false, fps:25, uptime:'97.6%', alerts:0, type:'Fixed HD',   seed:'patrol11' },
+  { id:'CAM-19', loc:'Forest Trail B',   status:'online',  alerting:false, fps:30, uptime:'99.2%', alerts:0, type:'Fixed HD',   seed:'path12' },
+  { id:'CAM-20', loc:'River Crossing',   status:'online',  alerting:false, fps:25, uptime:'98.7%', alerts:0, type:'Thermal IR', seed:'river10' },
+  { id:'CAM-21', loc:'Hilltop West',     status:'online',  alerting:false, fps:30, uptime:'99.5%', alerts:0, type:'PTZ 4K',     seed:'hill9' },
+  { id:'CAM-22', loc:'Marsh Area',       status:'online',  alerting:false, fps:25, uptime:'98.3%', alerts:0, type:'Night Vision',seed:'water6' },
+  { id:'CAM-23', loc:'Orchard Watch',    status:'online',  alerting:false, fps:30, uptime:'99.1%', alerts:0, type:'Fixed HD',   seed:'tree7' },
+  { id:'CAM-24', loc:'Checkpoint Alpha', status:'online',  alerting:false, fps:25, uptime:'98.9%', alerts:0, type:'PTZ HD',     seed:'gate2' },
+];
+
+let filteredCams = [...CAMERA_DATA];
+
+function renderCamGrid() {
+  const grid = document.getElementById('cam-grid-full');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  filteredCams.forEach((cam, idx) => {
+    const isOff = cam.status === 'offline';
+    const div = document.createElement('div');
+    div.className = `cam-card-full ${isOff ? 'offline' : ''}`;
+    div.style.animationDelay = (idx * 0.03) + 's';
+    div.innerHTML = `
+      <div class="cam-thumb-full">
+        <img src="https://picsum.photos/seed/${cam.seed}/300/188" alt="${cam.id}" style="opacity:${isOff?0.2:0.85};${isOff?'filter:grayscale(1);':''}">
+        <div class="thumb-overlay"></div>
+        ${isOff?`<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
+          <div style="font-family:'Orbitron',sans-serif;font-size:11px;font-weight:700;color:var(--red-alert);letter-spacing:2px;background:rgba(0,0,0,0.7);padding:6px 14px;border-radius:4px;border:1px solid rgba(255,45,85,0.4);">⚠ NO SIGNAL</div>
+        </div>`:''}
+        <div class="cam-status-badge-thumb">
+          <span class="badge ${isOff?'badge-offline':'badge-online'}" style="font-size:9px;">
+            ${isOff?'OFFLINE':'ONLINE'}
+          </span>
+        </div>
+        ${cam.alerting?`<div class="cam-alert-badge-thumb"><span class="badge badge-critical" style="font-size:9px;">🚨 ALERT</span></div>`:''}
+        ${!isOff?`<div class="cam-live-dot"><span class="live-dot"></span> REC</div>`:''}
+        <div style="position:absolute;bottom:10px;left:10px;font-family:'Share Tech Mono',monospace;font-size:9px;color:rgba(255,255,255,0.6);">${cam.id}</div>
+      </div>
+      <div class="cam-info-panel">
+        <div class="cam-info-row">
+          <span class="cam-id-label">${cam.id}</span>
+          <span style="font-size:10px;color:var(--text-muted);">${cam.type}</span>
+        </div>
+        <div class="cam-location-label">📍 ${cam.loc}</div>
+        <div class="cam-stats-row">
+          <div class="cam-stat-mini">
+            <div class="cam-stat-mini-val">${isOff?'--':cam.fps+'fps'}</div>
+            <div class="cam-stat-mini-lbl">Frame Rate</div>
+          </div>
+          <div class="cam-stat-mini">
+            <div class="cam-stat-mini-val" style="${isOff?'color:var(--red-alert)':''}">${cam.uptime}</div>
+            <div class="cam-stat-mini-lbl">Uptime</div>
+          </div>
+          <div class="cam-stat-mini">
+            <div class="cam-stat-mini-val" style="${cam.alerts>0?'color:var(--red-alert)':''}">${cam.alerts}</div>
+            <div class="cam-stat-mini-lbl">Alerts</div>
+          </div>
+        </div>
+        <div class="cam-actions">
+          <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="event.stopPropagation();viewCam('${cam.id}')">👁 View</button>
+          ${isOff
+            ? `<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();reconnectCam(this,'${cam.id}')">↺ Reconnect</button>`
+            : `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();showToast('${cam.id}','Camera settings opened','alert-info')">⚙</button>`
+          }
+          <button class="btn btn-ghost btn-sm" style="color:var(--red-alert);" onclick="event.stopPropagation();removeCam('${cam.id}',this)">🗑</button>
+        </div>
+      </div>
+    `;
+    grid.appendChild(div);
+  });
+}
+
+function viewCam(id) {
+  showToast(`Opening ${id}`, 'Switching to full-screen camera view', 'alert-info');
+  setTimeout(() => window.location.href = 'dashboard.html', 1200);
+}
+
+function removeCam(id, btn) {
+  if (!confirm(`Remove ${id} from the network?`)) return;
+  const idx = filteredCams.findIndex(c => c.id === id);
+  if (idx > -1) filteredCams.splice(idx, 1);
+  renderCamGrid();
+  showToast(`${id} Removed`, 'Camera removed from network', 'alert-info');
+}
+
+function reconnectCam(btn, id) {
+  btn.textContent = '⟳ Connecting…';
+  btn.disabled = true;
+  setTimeout(() => {
+    const cam = CAMERA_DATA.find(c => c.id === id);
+    if (cam) { cam.status = 'online'; cam.uptime = '100%'; cam.fps = 30; }
+    renderCamGrid();
+    showToast(`${id} Online`, 'Camera reconnected successfully', 'alert-info');
+  }, 2000);
+}
+
+function closeAddModal(e) {
+  if (e.target.id === 'add-cam-modal') document.getElementById('add-cam-modal').classList.remove('open');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderCamGrid();
+
+  document.getElementById('btn-add-camera')?.addEventListener('click', () => {
+    document.getElementById('add-cam-modal').classList.add('open');
+  });
+
+  document.getElementById('btn-confirm-add-cam')?.addEventListener('click', () => {
+    const id  = document.getElementById('new-cam-id')?.value.trim() || 'CAM-25';
+    const loc = document.getElementById('new-cam-location')?.value.trim() || 'New Location';
+    CAMERA_DATA.unshift({ id, loc, status:'online', alerting:false, fps:30, uptime:'100%', alerts:0, type:'Fixed HD', seed:'gate2' });
+    filteredCams = [...CAMERA_DATA];
+    renderCamGrid();
+    document.getElementById('add-cam-modal').classList.remove('open');
+    showToast(`${id} Added`, `Camera registered at ${loc}`, 'alert-info');
+  });
+
+  document.getElementById('btn-refresh-cams')?.addEventListener('click', () => {
+    showToast('Network Refresh', 'Pinging all 24 cameras…', 'alert-info');
+    renderCamGrid();
+  });
+
+  // Filter tabs
+  document.getElementById('cam-filter-tabs')?.addEventListener('click', (e) => {
+    const tab = e.target.closest('.filter-tab');
+    if (!tab) return;
+    document.querySelectorAll('#cam-filter-tabs .filter-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const f = tab.dataset.filter;
+    filteredCams = f === 'all'      ? [...CAMERA_DATA]
+                 : f === 'online'   ? CAMERA_DATA.filter(c => c.status === 'online')
+                 : f === 'offline'  ? CAMERA_DATA.filter(c => c.status === 'offline')
+                 : f === 'alerting' ? CAMERA_DATA.filter(c => c.alerting)
+                 : [...CAMERA_DATA];
+    renderCamGrid();
+  });
+
+  // Search
+  document.getElementById('cam-search')?.addEventListener('input', function() {
+    const q = this.value.toLowerCase().trim();
+    filteredCams = CAMERA_DATA.filter(c =>
+      c.id.toLowerCase().includes(q) || c.loc.toLowerCase().includes(q) || c.type.toLowerCase().includes(q)
+    );
+    renderCamGrid();
+  });
+});
+</script>
+</body>
+</html>

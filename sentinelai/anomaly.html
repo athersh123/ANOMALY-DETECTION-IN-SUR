@@ -1,0 +1,1089 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SentinelAI – Human Anomaly Detection</title>
+  <meta name="description" content="SentinelAI human anomaly detection – autoencoder-based analysis for running, fighting, crowds, and vehicle intrusion.">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="api.js"></script>
+  <style>
+    .anomaly-type-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    @media(max-width:900px){ .anomaly-type-grid { grid-template-columns: repeat(3,1fr); } }
+    @media(max-width:600px){ .anomaly-type-grid { grid-template-columns: repeat(2,1fr); } }
+
+    .anomaly-type-btn {
+      padding: 14px 10px;
+      border-radius: var(--radius-md);
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      text-align: center;
+      cursor: pointer;
+      transition: var(--transition);
+      font-family: 'Rajdhani', sans-serif;
+    }
+    .anomaly-type-btn:hover, .anomaly-type-btn.selected {
+      border-color: var(--border-glow);
+      background: var(--bg-glass-light);
+      box-shadow: 0 0 15px rgba(0,212,255,0.1);
+    }
+    .anomaly-type-btn.selected { border-color: var(--red-alert); }
+    .anomaly-type-btn .at-icon { font-size: 28px; margin-bottom: 6px; display: block; }
+    .anomaly-type-btn .at-name { font-size: 11px; font-weight: 700; color: var(--text-secondary); letter-spacing: 0.5px; text-transform: uppercase; }
+    .anomaly-type-btn .at-count {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 13px;
+      color: var(--blue-neon);
+      margin-top: 4px;
+    }
+    .anomaly-type-btn.selected .at-count { color: var(--red-alert); }
+
+    .error-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+    .error-dot.normal  { background: var(--green-safe); box-shadow: 0 0 6px var(--green-safe); }
+    .error-dot.anomaly { background: var(--red-alert);  box-shadow: 0 0 6px var(--red-alert); }
+
+    .gauge-row { display: flex; gap: 16px; }
+    .gauge-item { flex: 1; text-align: center; }
+    .gauge-val  {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 28px;
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+    .gauge-lbl { font-size: 10px; color: var(--text-muted); letter-spacing: 1px; text-transform: uppercase; }
+
+    .bbox-human {
+      position: absolute;
+      border: 2px solid var(--yellow-warn);
+      box-shadow: 0 0 12px rgba(255,204,0,0.5), inset 0 0 8px rgba(255,204,0,0.05);
+      pointer-events: none;
+    }
+    .bbox-human-label {
+      position: absolute;
+      top: -22px;
+      left: -2px;
+      background: var(--yellow-warn);
+      color: #000;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 3px 3px 3px 0;
+      white-space: nowrap;
+    }
+    .bbox-human.critical { border-color: var(--red-alert); box-shadow: 0 0 12px rgba(255,45,85,0.5); }
+    .bbox-human.critical .bbox-human-label { background: var(--red-alert); color: white; }
+  </style>
+</head>
+<body>
+<div class="app-shell" id="app-shell">
+  <div class="main-content">
+    <div class="page-content">
+
+      <!-- Header -->
+      <div class="page-header animate-fadeInUp">
+        <div class="page-header-left">
+          <div class="page-header-title">🧠 Human Anomaly Detection</div>
+          <div class="page-header-sub">Autoencoder reconstruction analysis with conservative alerting and manual stream start</div>
+        </div>
+        <div class="flex gap-12">
+          <span class="badge badge-low" id="anomaly-status-badge">⏹ IDLE</span>
+          <button class="btn btn-ghost btn-sm" id="btn-reset-anomaly">↺ Reset</button>
+        </div>
+      </div>
+
+      <!-- Intrusion Banner -->
+      <div class="intrusion-banner" id="intrusion-banner" style="display:none;">
+        <div class="intrusion-icon">⚠</div>
+        <div class="intrusion-text">
+          <div class="intrusion-title">⚠ HUMAN ANOMALY DETECTED</div>
+          <div class="intrusion-desc" id="intrusion-desc">Waiting for live detection data…</div>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="document.getElementById('intrusion-banner').style.display='none'">Dismiss</button>
+      </div>
+
+      <!-- Anomaly Type Selector -->
+      <div class="anomaly-type-grid" id="anomaly-type-grid">
+        <!-- built by JS -->
+      </div>
+
+      <!-- Main Grid: Feed + Score -->
+      <div class="grid-2 mb-24" style="grid-template-columns:1fr 300px;">
+
+        <!-- Live CCTV Feed -->
+        <div class="glass-card">
+          <div class="card-header">
+            <div class="card-title">📡 Live CCTV Feed</div>
+            <div class="flex gap-8 items-center">
+              <select id="anom-cam-select" style="background:var(--bg-glass);border:1px solid var(--border-glass);color:var(--text-secondary);border-radius:6px;padding:4px 10px;font-size:12px;font-family:inherit;">
+                <option>CAM-02 · West Entry</option>
+                <option>CAM-03 · Village Square</option>
+                <option>CAM-04 · East Gate</option>
+                <option>CAM-06 · River Bank</option>
+              </select>
+              <!-- Dynamic detector status indicator -->
+              <span id="an-status-badge" class="badge badge-low" style="min-width:90px;text-align:center;">⏹ STOPPED</span>
+            </div>
+          </div>
+          <div class="card-body" style="padding:14px;">
+            <div class="feed-container" id="anomaly-feed">
+              <img
+                src="https://placehold.co/860x484/030c1a/00d4ff?text=Click+Start+Monitoring"
+                alt="Human Anomaly Live Feed"
+                class="feed-img"
+                id="an-feed-img"
+                onerror="this.src='https://placehold.co/860x484/030c1a/00d4ff?text=Backend+Offline'; this.style.objectFit='contain';"
+              >
+              <div class="scanline"></div>
+              <div class="feed-overlay"></div>
+
+              <!-- Bounding box – shown when anomaly is active -->
+              <div class="bbox-human" id="bbox-human-1" style="display:none;top:25%;left:35%;width:18%;height:45%;">
+                <div class="bbox-human-label" id="bbox-h1-label"></div>
+              </div>
+
+              <div class="feed-hud">
+                <div class="feed-corners">
+                  <div class="corner corner-tl"></div>
+                  <div class="corner corner-tr"></div>
+                  <div class="corner corner-bl"></div>
+                  <div class="corner corner-br"></div>
+                </div>
+                <div class="feed-info-top">
+                  <div class="feed-cam-id" id="anom-cam-label">CAM-02 · WEST ENTRY</div>
+                  <div class="feed-live-badge"><span class="live-dot"></span> LIVE</div>
+                </div>
+                <div class="feed-info-bottom">
+                  <div class="feed-timestamp"></div>
+                  <div style="background:rgba(0,0,0,0.6);padding:3px 8px;border-radius:4px;font-family:'Share Tech Mono',monospace;font-size:10px;color:rgba(255,255,255,0.7);">
+                    AE Model · 25 FPS
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between" style="margin-top:12px;flex-wrap:wrap;gap:8px;">
+              <div class="flex gap-8">
+                <!-- Monitoring start/stop -->
+                <button class="btn btn-primary btn-sm" id="btn-an-start"
+                        style="background:linear-gradient(135deg,#00c853,#00897b);border:none;"
+                        onclick="anStartMonitoring()">▶ Start Monitoring</button>
+                <button class="btn btn-danger btn-sm" id="btn-an-stop" disabled
+                        onclick="anStopMonitoring()">⏹ Stop</button>
+                <span style="width:1px;background:var(--border-glass);align-self:stretch;"></span>
+                <button class="btn btn-ghost btn-sm" onclick="document.getElementById('bbox-human-1').style.display='none'">Clear Box</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btn-an-upload-img" onclick="event.preventDefault(); document.getElementById('an-img-input').click()">📁 Upload Image</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-an-upload-vid" onclick="event.preventDefault(); document.getElementById('an-vid-input').click()">🎬 Upload Video</button>
+              </div>
+              <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-muted);">
+                Persons: <span style="color:var(--yellow-warn);" id="persons-count">0</span> detected
+              </div>
+            </div>
+            <!-- Hidden file inputs -->
+            <input type="file" id="an-img-input" accept=".jpg,.jpeg,.png,.bmp,.webp" style="display:none">
+            <input type="file" id="an-vid-input" accept=".mp4,.avi,.mov,.mkv" style="display:none">
+          </div>
+        </div>
+
+        <!-- Anomaly Upload Image & Video Results moved to full-width area below -->
+
+
+        <!-- Right: Score Panel -->
+        <div class="flex flex-col gap-16">
+
+          <!-- Anomaly Score Ring -->
+          <div class="glass-card danger">
+            <div class="card-header">
+              <div class="card-title">📊 Anomaly Score</div>
+              <span class="badge badge-critical" id="score-badge">HIGH</span>
+            </div>
+            <div class="card-body text-center">
+              <div class="anomaly-ring-wrap">
+                <div class="anomaly-ring" id="anomaly-score-ring">
+                  <!-- built by JS -->
+                </div>
+              </div>
+              <div style="margin-top:8px;margin-bottom:16px;">
+                <div style="font-family:'Orbitron',sans-serif;font-size:15px;font-weight:700;color:var(--red-alert);letter-spacing:1px;" id="current-anomaly-type">RUNNING</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Detected Behavior</div>
+              </div>
+
+              <div class="gauge-row">
+                <div class="gauge-item">
+                  <div class="gauge-val" style="color:var(--green-safe);" id="normal-pct">100<span style="font-size:14px">%</span></div>
+                  <div class="gauge-lbl">Normal</div>
+                </div>
+                <div class="gauge-item">
+                  <div class="gauge-val" style="color:var(--red-alert);" id="anomaly-pct">0<span style="font-size:14px">%</span></div>
+                  <div class="gauge-lbl">Anomaly</div>
+                </div>
+              </div>
+
+              <div class="conf-bar-wrap" style="margin-top:16px;">
+                <div class="conf-bar-label">
+                  <span style="color:var(--green-safe)">Normal Activity</span>
+                  <span>23.6%</span>
+                </div>
+                <div class="conf-bar-track"><div class="conf-bar-fill" data-width="23" style="width:0%;background:linear-gradient(90deg,#007744,var(--green-safe));"></div></div>
+              </div>
+              <div class="conf-bar-wrap">
+                <div class="conf-bar-label">
+                  <span style="color:var(--red-alert)">Anomaly Score</span>
+                  <span>76.4%</span>
+                </div>
+                <div class="conf-bar-track"><div class="conf-bar-fill danger" data-width="76" style="width:0%"></div></div>
+              </div>
+
+              <button class="btn btn-danger w-full" style="margin-top:14px;" onclick="showToast('Security Alert Raised','Response team dispatched to location','alert-critical')">
+                &#x1F6A8; Alert Security
+              </button>
+            </div>
+          </div>
+          <div class="glass-card">
+            <div class="card-header">
+              <div class="card-title">&#x1F52C; Reconstruction Error</div>
+            </div>
+            <div class="card-body text-center">
+              <div style="font-family:'Share Tech Mono',monospace;font-size:36px;font-weight:700;color:var(--green-safe);text-shadow:0 0 20px rgba(0,255,136,0.4);" id="recon-error">0.000</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:4px;margin-bottom:14px;">Current MSE Error (EMA)</div>
+              <div style="font-size:12px;color:var(--text-secondary);">Threshold: <span id="threshold-val" style="color:var(--yellow-warn);font-family:'Share Tech Mono',monospace;">0.00350</span></div>
+              <div id="recon-error-status" style="margin-top:10px;padding:8px 12px;background:rgba(0,255,136,0.05);border:1px solid rgba(0,255,136,0.2);border-radius:8px;font-size:12px;color:var(--green-safe);">
+                &#x2713; Within normal threshold
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reconstruction Error Graph -->
+      <div class="glass-card mb-24">
+        <div class="card-header">
+          <div class="card-title">📈 Reconstruction Error Graph</div>
+          <div class="flex gap-12 items-center">
+            <div style="font-size:11px;color:var(--text-secondary);">
+              <span class="error-dot normal"></span>Normal
+              <span class="error-dot anomaly" style="margin-left:12px;"></span>Anomaly
+            </div>
+            <div style="height:1px;width:1px;"></div>
+            <span class="badge badge-info">Live · 3s Refresh</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="chart-wrap" style="height:220px;">
+            <canvas id="recon-error-chart" class="chart-canvas"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom: Detection Stats + Timeline -->
+      <div class="grid-2 mb-24">
+
+        <!-- Frequency by type -->
+        <div class="glass-card">
+          <div class="card-header">
+            <div class="card-title">📊 Anomaly Frequency by Type</div>
+          </div>
+          <div class="card-body">
+            <div class="chart-wrap" style="height:200px;">
+              <canvas id="anom-freq-chart" class="chart-canvas"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent anomaly detections -->
+        <div class="glass-card">
+          <div class="card-header">
+            <div class="card-title">🕒 Recent Anomaly Events</div>
+          </div>
+          <div class="card-body" style="padding:12px;max-height:260px;overflow-y:auto;">
+            <div class="alert-list" id="anomaly-events-list">
+              <!-- Populated live by pollAnomalyAPI() when anomaly detected -->
+              <div style="padding:16px;text-align:center;font-size:12px;color:var(--text-muted);" id="anomaly-events-placeholder">
+                Waiting for live anomaly detections&hellip;
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="nav.js"></script>
+<script src="script.js"></script>
+<script>
+const ANOMALY_TYPES = [
+  { name:'Normal', emoji:'✅', count:0, score:0.0, level:'info', color:'#00ff88' },
+  { name:'Suspicious Activity', emoji:'👤', count:0, score:0.5, level:'high', color:'#ff9500' },
+  { name:'Anomaly Detected', emoji:'🚨', count:0, score:0.8, level:'critical', color:'#ff2d55' },
+];
+
+let selectedAnomaly = 0;
+const AN_MAX_BUF = 60;
+let _an_errBuf = [];
+
+let uploadResultOpen  = false;
+let _uploadInProgress = false;
+
+let _an_lastType = '';
+let _an_lastToast = 0;
+const AN_COOLDOWN = 30000;
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Build anomaly type buttons
+  const grid = document.getElementById('anomaly-type-grid');
+  ANOMALY_TYPES.forEach((a, i) => {
+    const btn = document.createElement('div');
+    btn.className = 'anomaly-type-btn glass-card' + (i === 0 ? ' selected' : '');
+    btn.dataset.type = a.name;
+    btn.innerHTML = `
+      <span class="at-icon">${a.emoji}</span>
+      <div class="at-name">${a.name}</div>
+      <div class="at-count">${a.count} detected</div>
+    `;
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.anomaly-type-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      selectedAnomaly = i;
+      updateScorePanel(a);
+    });
+    grid.appendChild(btn);
+  });
+
+  // Build anomaly score ring
+  buildScoreRing(0.76, '#ffcc00');
+
+  // Build reconstruction error chart
+  buildErrorChart();
+  setInterval(() => {
+    if (state.chartInstances['recon-error-chart']) {
+      const newData = generateErrorData(60, 0.2);
+      const chart = state.chartInstances['recon-error-chart'];
+      chart.data.labels = newData.labels;
+      chart.data.datasets[0].data = newData.data;
+      chart.data.datasets[0].backgroundColor = newData.colors;
+      chart.data.datasets[0].borderColor = newData.borderColors;
+      chart.update('none');
+
+      // Update live reconstruction error display
+      const lastVal = newData.data[newData.data.length - 1];
+      const el = document.getElementById('recon-error');
+      if (el) {
+        el.textContent = lastVal.toFixed(3);
+        el.style.color = lastVal > 0.45
+          ? 'var(--red-alert)'
+          : 'var(--green-safe)';
+      }
+    }
+ }, 3000);
+
+  // Anomaly frequency bar
+  createBarChart('anom-freq-chart',
+    ['Running', 'Fighting', 'Crowd', 'Vehicle', 'Suspicious'],
+    [{
+      label: 'Detections',
+      data: [5, 3, 4, 2, 6],
+      backgroundColor: ['rgba(255,204,0,0.5)','rgba(255,45,85,0.5)','rgba(255,140,0,0.5)','rgba(255,45,85,0.4)','rgba(255,149,0,0.5)'],
+      borderColor: ['#ffcc00','#ff2d55','#ff8c00','#ff2d55','#ff9500'],
+      borderWidth: 2,
+    }]
+  );
+
+  document.getElementById('btn-reset-anomaly')?.addEventListener('click', () => {
+    document.getElementById('anomaly-status-badge').textContent = '⏹ IDLE';
+    document.getElementById('anomaly-status-badge').className = 'badge badge-low';
+    document.getElementById('bbox-human-1').style.display = 'none';
+    document.getElementById('persons-count').textContent = '0';
+  });
+
+  // Live monitoring is controlled via the Start/Stop buttons calling anStartMonitoring() / anStopMonitoring()
+
+  initFeedHealthCheck();
+});
+
+function initFeedHealthCheck() {
+  const img = document.getElementById('an-feed-img');
+  if (!img) return;
+  let retryTimer = null;
+
+  img.addEventListener('error', () => {
+    // Only auto-retry if we are actively monitoring
+    if (!_anMonitoring) return;
+    if (retryTimer) return; // already waiting
+    img.src = 'https://placehold.co/860x484/030c1a/ff2d55?text=Reconnecting…';
+    img.style.objectFit = 'contain';
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      if (_anMonitoring) {
+        img.src = API.VIDEO_ANOMALY + '?ts=' + Date.now();
+        img.style.objectFit = 'cover';
+      }
+    }, 5000);
+  });
+}
+
+function buildScoreRing(score, color) {
+  const pct = Math.round(score * 100);
+  const ring = document.getElementById('anomaly-score-ring');
+  if (!ring) return;
+  ring.innerHTML = buildRingSVG(pct, color) +
+    `<div class="anomaly-ring-value">
+      <div class="ring-number" style="color:${color};">${pct}%</div>
+      <div class="ring-label">ANOMALY</div>
+    </div>`;
+}
+
+function updateScorePanel(a) {
+  const pct = Math.round(a.score * 100);
+  buildScoreRing(a.score, a.color);
+  document.getElementById('current-anomaly-type').textContent = a.name.toUpperCase();
+  document.getElementById('current-anomaly-type').style.color = a.color;
+  document.getElementById('anomaly-pct').innerHTML = pct + '<span style="font-size:14px">%</span>';
+  document.getElementById('anomaly-pct').style.color = a.color;
+  document.getElementById('normal-pct').innerHTML = (100-pct) + '<span style="font-size:14px">%</span>';
+  document.getElementById('recon-error').textContent = a.score.toFixed(3);
+  document.getElementById('recon-error').style.color = a.score > 0.45 ? 'var(--red-alert)' : 'var(--green-safe)';
+}
+
+function buildErrorChart() {
+  const ed = generateErrorData(60, 0.18);
+  const canvas = document.getElementById('recon-error-chart');
+  if (!canvas || !window.Chart) return;
+  if (state.chartInstances['recon-error-chart']) state.chartInstances['recon-error-chart'].destroy();
+  const chart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: ed.labels,
+      datasets: [{
+        label: 'Reconstruction Error',
+        data: ed.data,
+        backgroundColor: ed.colors,
+        borderColor: ed.borderColors,
+        borderWidth: 1,
+        borderRadius: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(4,14,30,0.95)',
+          borderColor: 'rgba(0,212,255,0.3)',
+          borderWidth: 1,
+          titleColor: '#00d4ff',
+          bodyColor: '#7ab0d4',
+          callbacks: {
+            label: (ctx) => {
+              const v = ctx.parsed.y;
+              return `Error: ${v.toFixed(3)} (${v > 0.45 ? 'ANOMALY' : 'Normal'})`;
+            }
+          }
+        },
+        annotation: {}
+      },
+      scales: {
+        x: { display: false },
+        y: {
+          min: 0, max: 1,
+          ticks: { color: '#3d6b8f', callback: v => v.toFixed(2) },
+          grid: { color: 'rgba(0,212,255,0.04)' }
+        }
+      },
+    }
+  });
+  state.chartInstances['recon-error-chart'] = chart;
+
+  // Draw threshold line as annotation-ish via plugin
+  Chart.register({
+    id: 'thresholdLine',
+    afterDraw(chart) {
+      const { ctx, chartArea: { top, bottom, left, right }, scales: { y } } = chart;
+      const yPos = y.getPixelForValue(0.45);
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(left, yPos);
+      ctx.lineTo(right, yPos);
+      ctx.strokeStyle = 'rgba(255,204,0,0.6)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 4]);
+      ctx.stroke();
+      ctx.fillStyle = '#ffcc00';
+      ctx.font = '10px Share Tech Mono';
+      ctx.fillText('THRESHOLD: 0.45', left + 6, yPos - 5);
+      ctx.restore();
+    }
+  });
+}
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   SentinelAI – anomaly.html  LIVE API INTEGRATION
+   All data from: GET http://127.0.0.1:5000/api/anomaly
+   Video stream : http://127.0.0.1:5000/video_feed/anomaly
+   Rules:
+     - Poll every 1 second
+     - Toast only when anomaly_type changes or 30-second cooldown
+     - Prevent duplicate toasts for continuous same-type anomaly
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+const AN_EMOJIS = {
+  'Normal': '✅',
+  'Suspicious Activity': '👤',
+  'Suspicious': '👤',
+  'Anomaly Detected': '🚨',
+  'Anomaly': '🚨',
+  'Accident': '💥',
+  'Explosion': '🔥',
+  'Fighting': '🥊',
+  'Shooting': '🔫',
+  'Vandalism': '🔨'
+};
+
+function updateAnomalyUI(d) {
+  const active      = d.active      === true;
+  const status      = d.status      || 'Normal';
+  const score       = parseFloat(d.score       || 0);
+  const anomalyType = d.anomaly_type || 'Normal';
+  const isGenericAlert = ['Suspicious Activity', 'Anomaly Detected'].includes(anomalyType);
+  const normalPct   = d.normal  ?? (active ? 0  : 100);
+  const anomalyPct  = d.anomaly ?? (active ? 100 : 0);
+  const error       = parseFloat(d.error     || 0);
+  const threshold   = parseFloat(d.threshold || 0.0025);
+  const camera      = d.camera    || 'CAM-02';
+  const timestamp   = d.timestamp || '';
+
+  const emoji = AN_EMOJIS[anomalyType] || '⚠ ';
+  const color = active ? 'var(--red-alert)' : 'var(--green-safe)';
+
+  // ── Alert banner ──────────────────────────────────────────
+  const banner = document.getElementById('intrusion-banner');
+  if (banner) {
+    banner.style.display = active ? 'flex' : 'none';
+    const desc = document.getElementById('intrusion-desc');
+    if (desc) {
+      desc.textContent = active 
+        ? `${anomalyType.toUpperCase()} DETECTED on ${camera} with score ${(score * 100).toFixed(1)}% at ${timestamp}`
+        : 'Waiting for live detection data…';
+    }
+  }
+
+  // ── Header status badge ────────────────────────────────────
+  const badge = document.getElementById('anomaly-status-badge');
+  if (badge) {
+    badge.textContent = active ? `🚨 ${status.toUpperCase()} DETECTED` : '✅ ALL CLEAR';
+    badge.className   = active ? 'badge badge-critical' : 'badge badge-low';
+  }
+
+  // ── Anomaly score ring ──────────────────────────────────────
+  const ring = document.getElementById('anomaly-score-ring');
+  if (ring) {
+    const pct  = Math.round(score * 100);
+    ring.innerHTML = buildRingSVG(pct, color) +
+      `<div class="anomaly-ring-value">
+         <div class="ring-number" style="color:${color};">${pct}%</div>
+         <div class="ring-label">ANOMALY SCORE</div>
+       </div>`;
+  }
+
+  // ── Detected behavior label ──────────────────────────────────
+  const typeLabel = document.getElementById('current-anomaly-type');
+  if (typeLabel) {
+    typeLabel.textContent  = active ? (isGenericAlert ? 'MONITORING' : anomalyType.toUpperCase()) : 'NORMAL';
+    typeLabel.style.color  = color;
+  }
+
+  // ── Score badge (HIGH / NORMAL) ──────────────────────────────
+  const scoreBadge = document.getElementById('score-badge');
+  if (scoreBadge) {
+    scoreBadge.textContent = active ? status.toUpperCase() : 'NORMAL';
+    scoreBadge.className   = active ? 'badge badge-critical' : 'badge badge-low';
+  }
+
+  // ── Normal / Anomaly % gauges ────────────────────────────────
+  const normalPctEl  = document.getElementById('normal-pct');
+  const anomalyPctEl = document.getElementById('anomaly-pct');
+  if (normalPctEl)  normalPctEl.innerHTML  = `${Math.round(normalPct)}<span style="font-size:14px">%</span>`;
+  if (anomalyPctEl) anomalyPctEl.innerHTML = `${Math.round(anomalyPct)}<span style="font-size:14px">%</span>`;
+
+  // ── Reconstruction error values ──────────────────
+  const errEl = document.getElementById('recon-error');
+  if (errEl) {
+    errEl.textContent = error.toFixed(5);
+    errEl.style.color = error >= threshold ? 'var(--red-alert)' : 'var(--green-safe)';
+    errEl.style.textShadow = error >= threshold ? '0 0 20px rgba(255,45,85,0.4)' : '0 0 20px rgba(0,255,136,0.4)';
+  }
+  const thrEl = document.getElementById('threshold-val');
+  if (thrEl) thrEl.textContent = threshold.toFixed(5);
+
+  const statusEl = document.getElementById('recon-error-status');
+  if (statusEl) {
+    if (error >= threshold) {
+      statusEl.innerHTML = '⚠️ Threshold Exceeded';
+      statusEl.style.background = 'rgba(255,45,85,0.05)';
+      statusEl.style.borderColor = 'rgba(255,45,85,0.2)';
+      statusEl.style.color = 'var(--red-alert)';
+    } else {
+      statusEl.innerHTML = '✓ Within normal threshold';
+      statusEl.style.background = 'rgba(0,255,136,0.05)';
+      statusEl.style.borderColor = 'rgba(0,255,136,0.2)';
+      statusEl.style.color = 'var(--green-safe)';
+    }
+  }
+
+  // ── Bounding box label ──────────────────────────────────────────
+  const bbox      = document.getElementById('bbox-human-1');
+  const bboxLabel = document.getElementById('bbox-h1-label');
+  if (active) {
+    if (bbox)      bbox.style.display = 'block';
+    if (bboxLabel) bboxLabel.textContent = `${emoji} ${anomalyType.toUpperCase()}`;
+    const personsEl = document.getElementById('persons-count');
+    if (personsEl) personsEl.textContent = '1';
+  } else {
+    if (bbox) bbox.style.display = 'none';
+    const personsEl = document.getElementById('persons-count');
+    if (personsEl) personsEl.textContent = '0';
+  }
+
+  // ── Anomaly type button highlight ──────────────────────────────
+  document.querySelectorAll('.anomaly-type-btn').forEach(btn => {
+    btn.classList.remove('selected');
+    if (active && btn.dataset.type === anomalyType) btn.classList.add('selected');
+  });
+
+  // ── Reconstruction error chart update ──────────────────────────
+  _an_errBuf.push(error);
+  if (_an_errBuf.length > AN_MAX_BUF) _an_errBuf.shift();
+  const chart = window.state?.chartInstances?.['recon-error-chart'];
+  if (chart?.data) {
+    chart.data.datasets[0].data   = [..._an_errBuf];
+    chart.data.datasets[0].backgroundColor = _an_errBuf.map(v =>
+      v > threshold ? 'rgba(255,45,85,0.4)' : 'rgba(0,255,136,0.4)'
+    );
+    chart.data.datasets[0].borderColor = _an_errBuf.map(v =>
+      v > threshold ? '#ff2d55' : '#00ff88'
+    );
+    chart.data.labels = _an_errBuf.map((_, i) => i);
+    chart.update('none');
+  }
+}
+
+// ── Main poll ────────────────────────────────────────────────────────
+async function pollAnomalyAPI() {
+  if (uploadResultOpen || _uploadInProgress) {
+    return;
+  }
+  const d = await API.getAnomaly();
+  if (!d) return;
+
+  updateAnomalyUI(d);
+
+  const active      = d.active      === true;
+  const status      = d.status      || 'Normal';
+  const score       = parseFloat(d.score       || 0);
+  const anomalyType = d.anomaly_type || 'Normal';
+  const camera      = d.camera    || 'CAM-02';
+  const timestamp   = d.timestamp || '';
+  const error       = parseFloat(d.error     || 0);
+
+  const emoji = AN_EMOJIS[anomalyType] || '⚠ ';
+
+  // ── Toast dedup & history list ──────────────────
+  if (active) {
+    const now = Date.now();
+    const newType = anomalyType !== _an_lastType;
+    if (newType || (now - _an_lastToast) > AN_COOLDOWN) {
+      _an_lastType = anomalyType;
+      _an_lastToast = now;
+      showToast(
+        `🚨 ${emoji} ${anomalyType}`,
+        `Score: ${(score * 100).toFixed(1)}% · ${status} · ${camera}`,
+        'alert-critical'
+      );
+      pushAnomalyToList(anomalyType, emoji, score, status, camera, timestamp, error);
+    }
+  } else {
+    _an_lastType = '';
+  }
+}
+
+  // ── On-Demand Monitoring Control ─────────────────────────────────
+let _anMonitoring = false;
+
+function anSetUIState(running) {
+  _anMonitoring = running;
+  const btnStart  = document.getElementById('btn-an-start');
+  const btnStop   = document.getElementById('btn-an-stop');
+  const badge     = document.getElementById('an-status-badge');
+  const feedImg   = document.getElementById('an-feed-img');
+  const liveBadge = document.querySelector('#anomaly-feed .feed-live-badge');
+
+  if (running) {
+    if (feedImg && !feedImg.src.includes('/video_feed/')) {
+      feedImg.src = API.VIDEO_ANOMALY;
+      feedImg.style.objectFit = 'cover';
+    }
+    if (btnStart) { btnStart.disabled = true;  btnStart.style.opacity = '0.5'; }
+    if (btnStop)  { btnStop.disabled  = false; btnStop.style.opacity  = '1';   }
+    if (badge)    { badge.textContent = '● LIVE'; badge.className = 'badge badge-online'; }
+    if (liveBadge) liveBadge.style.display = '';
+  } else {
+    if (feedImg) {
+      feedImg.src = 'https://placehold.co/860x484/030c1a/00d4ff?text=Click+Start+Monitoring';
+      feedImg.style.objectFit = 'contain';
+    }
+    if (btnStart) { btnStart.disabled = false; btnStart.style.opacity = '1';   }
+    if (btnStop)  { btnStop.disabled  = true;  btnStop.style.opacity  = '0.5'; }
+    if (badge)    { badge.textContent = '⏹ STOPPED'; badge.className = 'badge badge-low'; }
+    if (liveBadge) liveBadge.style.display = 'none';
+    document.getElementById('persons-count') && (document.getElementById('persons-count').textContent = '0');
+  }
+}
+
+async function anStartMonitoring() {
+  const btn = document.getElementById('btn-an-start');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Starting…'; }
+  const res = await API.startAnomaly();
+  if (res && (res.status === 'started' || res.status === 'already_running')) {
+    anSetUIState(true);
+    showToast('Anomaly Monitoring', 'Camera started – Autoencoder detection is active', 'alert-info');
+  } else {
+    if (btn) { btn.disabled = false; btn.textContent = '▶ Start Monitoring'; }
+    showToast('Start Failed', res?.error || 'Could not start anomaly detector', 'alert-high');
+  }
+}
+
+async function anStopMonitoring() {
+  const btn = document.getElementById('btn-an-stop');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Stopping…'; }
+  const res = await API.stopAnomaly();
+  if (res && (res.status === 'stopped' || res.status === 'already_stopped')) {
+    anSetUIState(false);
+    showToast('Anomaly Monitoring', 'Camera stopped', 'alert-info');
+  } else {
+    if (btn) { btn.disabled = false; btn.textContent = '⏹ Stop'; }
+    showToast('Stop Failed', res?.error || 'Could not stop anomaly detector', 'alert-high');
+  }
+  if (btn) btn.textContent = '⏹ Stop';
+}
+
+// ── Boot ──────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  // Sync UI button state with actual backend detector state on page load
+  try {
+    const status = await API.getStatus();
+    anSetUIState(!!(status && status.anomaly_running));
+  } catch (_) {
+    anSetUIState(false); // default to stopped if backend unreachable
+  }
+
+  // Start polling after charts are initialized (give them 1.2s)
+  setTimeout(() => {
+    pollAnomalyAPI();
+    setInterval(pollAnomalyAPI, 1000);
+  }, 1200);
+
+  // Wire up file inputs
+  document.getElementById('an-img-input').addEventListener('change', handleAnImageUpload);
+  document.getElementById('an-vid-input').addEventListener('change', handleAnVideoUpload);
+
+  // Restore upload result after reload (if present)
+  try {
+    const stored = sessionStorage.getItem('sentinelai_an_upload');
+    if (stored) {
+      const result = JSON.parse(stored);
+      uploadResultOpen = true;
+      window.__uploadResultOpen = true;
+      document.getElementById('an-res-status').textContent = result.status || '—';
+      document.getElementById('an-res-status').style.color = result.active ? 'var(--red-alert)' : 'var(--green-safe)';
+      document.getElementById('an-res-type').textContent  = result.anomaly_type || '—';
+      document.getElementById('an-res-score').textContent = result.score != null ? (result.score * 100).toFixed(1) + '%' : '—';
+      document.getElementById('an-res-error').textContent = result.error != null ? result.error.toFixed(6) : '—';
+      document.getElementById('an-res-time').textContent  = result.detection_time_ms + ' ms';
+      if (result.annotated_b64) {
+        document.getElementById('an-result-img').src = 'data:image/jpeg;base64,' + result.annotated_b64;
+      }
+      document.getElementById('an-img-result-panel').style.display = 'block';
+    }
+  } catch (_) {}
+});
+
+
+// â”€â”€ Push to activity list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function pushAnomalyToList(type, emoji, score, status, camera, timestamp, error) {
+  const list = document.getElementById('anomaly-events-list') ||
+               document.getElementById('an-activity-list') ||
+               document.getElementById('recent-alerts-list') ||
+               document.querySelector('.alert-list');
+  if (!list) return;
+  const ph = document.getElementById('anomaly-events-placeholder');
+  if (ph) ph.remove();
+  const now     = (timestamp || '').split(' ')[1]?.slice(0, 5) || '--:--';
+  const isCrit  = status === 'Anomaly';
+  const item    = document.createElement('div');
+  item.className = `alert-item ${isCrit ? 'critical' : 'high'}`;
+  item.style.cssText = 'opacity:0;transition:opacity 0.35s;';
+  item.innerHTML = `
+    <div class="alert-icon-wrap" style="background:rgba(255,45,85,0.15);border:1px solid rgba(255,45,85,0.3)">${emoji}</div>
+    <div class="alert-content">
+      <div class="alert-title">${type} · Score: ${(score * 100).toFixed(1)}%</div>
+      <div class="alert-meta">${camera} · Error: ${error.toFixed(5)}</div>
+    </div>
+    <div class="alert-time">${now}</div>`;
+  list.prepend(item);
+  requestAnimationFrame(() => { item.style.opacity = '1'; });
+  const items = list.querySelectorAll('.alert-item');
+  if (items.length > 8) items[items.length - 1].remove();
+}
+
+// DOMContentLoaded listeners consolidate boot and file bindings above.
+
+/* ════════════════════════════════════════════════════════════
+   UPLOAD – IMAGE  (Anomaly)
+════════════════════════════════════════════════════════════ */
+const AN_EMOJIS_UPLOAD = {
+  'Normal':'✅','Running':'🏃','Fighting':'🥊',
+  'Crowd Formation':'👥','Vehicle Intrusion':'🚗',
+  'Suspicious Activity':'👤','Suspicious':'👤',
+  'Accident':'💥','Explosion':'🔥','Shooting':'🔫','Vandalism':'🔨'
+};
+
+async function handleAnImageUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = '';
+  showUploadModal('🧠 Running Anomaly Detection…', file.name, 0, true);
+  _uploadInProgress = true;
+  try {
+    const result = await API.uploadAnomalyImage(file);
+    uploadResultOpen = true;
+    window.__uploadResultOpen = true;
+    window.__uploadResultOpen = true;
+    console.log("Upload Result:", result);
+    closeUploadModal();
+    console.log("Anomaly API Response:", result);
+    const active = result.active === true;
+    
+    // Update main UI components
+    updateAnomalyUI({
+      active: active,
+      status: result.status,
+      score: result.score,
+      anomaly_type: result.anomaly_type,
+      camera: 'UPLOAD',
+      timestamp: result.timestamp
+    });
+
+    document.getElementById('an-res-status').textContent = result.status || '—';
+    document.getElementById('an-res-status').style.color = active ? 'var(--red-alert)' : 'var(--green-safe)';
+    document.getElementById('an-res-type').textContent  = result.anomaly_type || '—';
+    document.getElementById('an-res-score').textContent = result.score != null ? (result.score * 100).toFixed(1) + '%' : '—';
+    document.getElementById('an-res-error').textContent = result.error != null ? result.error.toFixed(6) : '—';
+    document.getElementById('an-res-time').textContent  = result.detection_time_ms + ' ms';
+    if (result.annotated_b64) {
+      document.getElementById('an-result-img').src = 'data:image/jpeg;base64,' + result.annotated_b64;
+    }
+    document.getElementById('an-img-result-panel').style.display = 'block';
+    document.getElementById('an-img-result-panel').scrollIntoView({ behavior:'smooth', block:'nearest' });
+    try { sessionStorage.setItem('sentinelai_an_upload', JSON.stringify(result)); } catch (_) {}
+    
+    if (active) {
+      const emoji = AN_EMOJIS_UPLOAD[result.anomaly_type] || '⚠️';
+      const errStr = result.error != null ? ` · Error: ${result.error.toFixed(5)}` : '';
+      showToast(`🚨 ${emoji} ${result.anomaly_type}`,
+        `Score: ${(result.score*100).toFixed(1)}%${errStr} · ${result.detection_time_ms}ms`,
+        'alert-critical');
+    } else {
+      showToast('✅ Normal Activity', `No anomaly detected · ${result.detection_time_ms}ms`, 'alert-info');
+    }
+  } catch (err) {
+    uploadResultOpen = false;
+    closeUploadModal();
+    showToast('❌ Upload Failed', err.message || 'Server error', 'alert-high');
+  } finally {
+    _uploadInProgress = false;
+  }
+}
+
+function closeAnImgResult() {
+  uploadResultOpen = false;
+  window.__uploadResultOpen = false;
+  _uploadInProgress = false;
+  document.getElementById('an-img-result-panel').style.display = 'none';
+  document.getElementById('an-result-img').removeAttribute('src');
+  try { sessionStorage.removeItem('sentinelai_an_upload'); } catch (_) {}
+}
+
+/* ════════════════════════════════════════════════════════════
+   UPLOAD – VIDEO  (Anomaly)
+════════════════════════════════════════════════════════════ */
+async function handleAnVideoUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = '';
+  showUploadModal('📤 Uploading CCTV Video…', file.name, 0, false);
+  _uploadInProgress = true;
+  try {
+    const { job_id } = await API.uploadAnomalyVideo(file, (pct) => {
+      updateUploadModal(`📤 Uploading… ${pct}%`, pct);
+    });
+    updateUploadModal('⚙️ Anomaly detection processing…', 51);
+    API.watchJob(job_id, {
+      onProgress: (pct) => updateUploadModal(`⚙️ Processing frames… ${pct}%`, pct),
+      onDone: (result) => { 
+        uploadResultOpen = true;
+        _uploadInProgress = false;
+        closeUploadModal(); 
+        console.log("Anomaly API Response:", result);
+        
+        // Also update the main UI with the most severe event or the first event!
+        if (result.anomaly_frames && result.anomaly_frames.length > 0) {
+          const mostSevere = result.anomaly_frames.reduce((prev, current) => (prev.score > current.score) ? prev : current);
+          updateAnomalyUI({
+            active: true,
+            status: mostSevere.status,
+            score: mostSevere.score,
+            anomaly_type: mostSevere.anomaly_type,
+            camera: 'UPLOAD',
+            timestamp: mostSevere.timestamp || new Date().toISOString()
+          });
+        }
+        
+        renderAnVideoResult(result); 
+      },
+      onError: (msg) => { 
+        uploadResultOpen = false;
+        _uploadInProgress = false;
+        closeUploadModal(); 
+        showToast('❌ Processing Failed', msg, 'alert-high'); 
+      },
+    });
+  } catch (err) {
+    uploadResultOpen = false;
+    _uploadInProgress = false;
+    closeUploadModal();
+    showToast('❌ Upload Failed', err.message || 'Server error', 'alert-high');
+  }
+}
+
+function closeAnVidResult() {
+  uploadResultOpen = false;
+  _uploadInProgress = false;
+  document.getElementById('an-vid-result-panel').style.display = 'none';
+}
+
+function renderAnVideoResult(result) {
+  const panel    = document.getElementById('an-vid-result-panel');
+  const videoEl  = document.getElementById('an-result-video');
+  const eventList = document.getElementById('an-vid-event-list');
+
+  document.getElementById('an-vid-frames').textContent   = result.total_frames ?? '—';
+  document.getElementById('an-vid-an-count').textContent = (result.anomaly_frames || []).length;
+
+  if (result.processed_video_url) {
+    videoEl.src = API.BASE + result.processed_video_url;
+    videoEl.load();
+  }
+
+  // Draw error timeline chart
+  const timeline = result.error_timeline || [];
+  const ctx = document.getElementById('an-vid-error-chart')?.getContext('2d');
+  if (ctx && timeline.length && typeof Chart !== 'undefined') {
+    const step = Math.max(1, Math.floor(timeline.length / 120));  // downsample to ~120pts
+    const pts  = timeline.filter((_, i) => i % step === 0);
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: pts.map(p => p.frame),
+        datasets: [{
+          data:            pts.map(p => p.error),
+          borderColor:     pts.map(p => p.status === 'Normal' ? '#00ff88' : '#ff2d55'),
+          backgroundColor: 'rgba(255,45,85,0.1)',
+          borderWidth: 1.5, pointRadius: 0, fill: true, tension: 0.3,
+        }],
+      },
+      options: {
+        animation: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { display: false },
+          y: { ticks: { color:'#8892a4', font:{size:9} }, grid: { color:'rgba(255,255,255,0.05)' } },
+        },
+      },
+    });
+  }
+
+  // Event list
+  eventList.innerHTML = '';
+  (result.anomaly_frames || []).slice(0, 20).forEach(af => {
+    const div = document.createElement('div');
+    div.style.cssText = 'padding:8px 10px;background:rgba(255,45,85,0.08);border:1px solid rgba(255,45,85,0.2);border-radius:6px;font-size:11px;';
+    const errText = af.error != null ? `<span style="color:var(--text-muted);">Error: <strong style="color:var(--yellow-warn);">${af.error.toFixed(5)}</strong></span>` : '';
+    div.innerHTML = `
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+        <span style="color:var(--text-primary);font-weight:600;">${AN_EMOJIS_UPLOAD[af.anomaly_type]||'⚠️'} ${af.anomaly_type}</span>
+        <span style="color:var(--blue-neon);font-family:'Share Tech Mono',monospace;">Frame #${af.frame}</span>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <span style="color:var(--text-muted);">Score: <strong style="color:var(--red-alert);">${(af.score*100).toFixed(1)}%</strong></span>
+        ${errText}
+      </div>`;
+    eventList.appendChild(div);
+  });
+  if (!result.anomaly_frames?.length) {
+    eventList.innerHTML = '<div style="color:var(--text-muted);font-size:11px;text-align:center;padding:8px;">No anomalies detected</div>';
+  }
+
+  panel.style.display = 'block';
+  panel.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  showToast('🎬 Video Processed',
+    `${result.total_frames} frames · ${(result.anomaly_frames||[]).length} anomaly events`, 'alert-info');
+}
+
+/* ════ SHARED UPLOAD MODAL ════ */
+function showUploadModal(label, filename, pct=0, indeterminate=false) {
+  let modal = document.getElementById('upload-progress-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'upload-progress-modal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);';
+    modal.innerHTML = `<div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:16px;padding:32px 40px;min-width:360px;text-align:center;box-shadow:0 0 40px rgba(0,212,255,0.2);">
+      <div style="font-size:40px;margin-bottom:12px;">⏳</div>
+      <div style="font-family:'Orbitron',sans-serif;font-size:14px;color:var(--blue-neon);margin-bottom:6px;" id="upm-label">Processing…</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;word-break:break-all;" id="upm-filename"></div>
+      <div style="background:rgba(255,255,255,0.05);border-radius:99px;height:6px;overflow:hidden;"><div id="upm-bar" style="height:100%;background:linear-gradient(90deg,var(--blue-neon),var(--purple-accent));border-radius:99px;transition:width 0.3s;width:0%;"></div></div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--text-muted);margin-top:8px;" id="upm-pct">0%</div></div>`;
+    document.body.appendChild(modal);
+  }
+  modal.style.display = 'flex';
+  document.getElementById('upm-label').textContent    = label;
+  document.getElementById('upm-filename').textContent = filename;
+  updateUploadModal(label, pct, indeterminate);
+}
+function updateUploadModal(label, pct, indeterminate=false) {
+  const lbl=document.getElementById('upm-label'), bar=document.getElementById('upm-bar'), pctEl=document.getElementById('upm-pct');
+  if(lbl) lbl.textContent=label;
+  if(bar) bar.style.width=indeterminate?'60%':pct+'%';
+  if(pctEl) pctEl.textContent=indeterminate?'Analysing…':pct+'%';
+}
+function closeUploadModal() {
+  const m=document.getElementById('upload-progress-modal'); if(m) m.style.display='none';
+}
+</script>
+</body>
+</html>

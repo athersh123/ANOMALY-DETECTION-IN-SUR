@@ -1,0 +1,22 @@
+venv/
+__pycache__/
+
+runs/
+train/
+valid/
+test/
+
+uploads/
+snapshots/
+
+*.pt
+*.h5
+*.keras
+
+*.db
+*.log
+
+new human anomaly_dataset/
+wildlife dataset/
+wildlife final v2/
+wildlife user dataset/

@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SentinelAI – Detection History</title>
+  <meta name="description" content="SentinelAI detection history – full log of wildlife and human anomaly events with filters, export, and PDF report.">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="api.js"></script>
+  <style>
+    /* ── History-specific styles ── */
+    .hist-filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      padding: 14px 18px;
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-md);
+      margin-bottom: 16px;
+    }
+    .hist-filter-bar select,
+    .hist-filter-bar input[type="text"] {
+      background: var(--bg-dark);
+      border: 1px solid var(--border-glass);
+      color: var(--text-secondary);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+      min-width: 130px;
+    }
+    .hist-filter-bar select:focus,
+    .hist-filter-bar input[type="text"]:focus {
+      border-color: var(--border-glow);
+    }
+    .hist-table-wrap {
+      overflow-x: auto;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-glass);
+    }
+    .hist-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .hist-table thead th {
+      background: rgba(0, 212, 255, 0.07);
+      padding: 10px 14px;
+      text-align: left;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 10px;
+      color: var(--blue-neon);
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+      border-bottom: 1px solid var(--border-glass);
+      user-select: none;
+      cursor: pointer;
+    }
+    .hist-table thead th:hover { color: var(--text-primary); }
+    .hist-table thead th.sort-asc::after  { content: ' ↑'; }
+    .hist-table thead th.sort-desc::after { content: ' ↓'; }
+    .hist-table tbody tr {
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      transition: background 0.15s;
+    }
+    .hist-table tbody tr:hover { background: rgba(0,212,255,0.04); }
+    .hist-table tbody td {
+      padding: 9px 14px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      vertical-align: middle;
+    }
+    .hist-table tbody td .snap-thumb {
+      width: 44px;
+      height: 30px;
+      object-fit: cover;
+      border-radius: 4px;
+      border: 1px solid var(--border-glass);
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .hist-table tbody td .snap-thumb:hover { transform: scale(1.8); }
+    .hist-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .hist-badge.wildlife   { background: rgba(255,45,85,0.15); color: #ff2d55; border: 1px solid rgba(255,45,85,0.3); }
+    .hist-badge.human      { background: rgba(0,212,255,0.12); color: #00d4ff; border: 1px solid rgba(0,212,255,0.25); }
+    .hist-badge.critical   { background: rgba(255,45,85,0.15); color: #ff2d55; }
+    .hist-badge.high       { background: rgba(255,140,0,0.15); color: #ff8c00; }
+    .hist-badge.anomaly    { background: rgba(255,45,85,0.15); color: #ff2d55; }
+    .hist-badge.suspicious { background: rgba(255,204,0,0.15); color: #ffcc00; }
+    .hist-badge.normal     { background: rgba(0,255,136,0.12); color: #00ff88; }
+    .hist-badge.live       { background: rgba(0,212,255,0.1);  color: #00d4ff; }
+    .hist-badge.upload_image { background: rgba(120,80,255,0.15); color: #a580ff; }
+    .hist-badge.upload_video  { background: rgba(255,140,0,0.12);  color: #ff8c00; }
+
+    .hist-pagination {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 14px;
+      justify-content: center;
+    }
+    .hist-pagination button {
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      color: var(--text-secondary);
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .hist-pagination button:hover:not(:disabled) {
+      border-color: var(--border-glow);
+      color: var(--text-primary);
+    }
+    .hist-pagination button:disabled { opacity: 0.35; cursor: default; }
+    .hist-pagination .page-info {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .stat-mini {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 14px 18px;
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-md);
+      min-width: 100px;
+    }
+    .stat-mini-val {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 26px;
+      font-weight: 800;
+      color: var(--blue-neon);
+      line-height: 1;
+    }
+    .stat-mini-lbl { font-size: 10px; color: var(--text-muted); margin-top: 4px; letter-spacing: 1px; }
+
+    .export-bar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sidebar nav -->
+    <nav class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-icon">⬡</div>
+        <div class="logo-text">Sentinel<span>AI</span></div>
+      </div>
+      <ul class="nav-links" id="nav-links">
+        <li class="nav-item"><a href="dashboard.html" class="nav-link"><span class="nav-icon">⬡</span><span class="nav-label">Dashboard</span></a></li>
+        <li class="nav-item"><a href="wildlife.html"  class="nav-link"><span class="nav-icon">🐅</span><span class="nav-label">Wildlife</span><span class="nav-badge" id="badge-wildlife">0</span></a></li>
+        <li class="nav-item"><a href="anomaly.html"   class="nav-link"><span class="nav-icon">👁️</span><span class="nav-label">Human Anomaly</span><span class="nav-badge" id="badge-anomaly">0</span></a></li>
+        <li class="nav-item active"><a href="history.html"  class="nav-link active"><span class="nav-icon">📋</span><span class="nav-label">History</span></a></li>
+        <li class="nav-item"><a href="analytics.html" class="nav-link"><span class="nav-icon">📊</span><span class="nav-label">Analytics</span></a></li>
+        <li class="nav-item"><a href="cameras.html"   class="nav-link"><span class="nav-icon">📷</span><span class="nav-label">Cameras</span></a></li>
+        <li class="nav-item"><a href="alerts.html"    class="nav-link"><span class="nav-icon">🚨</span><span class="nav-label">Alerts</span></a></li>
+        <li class="nav-item"><a href="settings.html"  class="nav-link"><span class="nav-icon">⚙️</span><span class="nav-label">Settings</span></a></li>
+      </ul>
+      <div class="sidebar-status">
+        <div class="status-dot online" id="sys-dot"></div>
+        <span class="status-text" id="sys-status">SYSTEM ONLINE</span>
+      </div>
+    </nav>
+
+    <!-- Main content -->
+    <main class="main-content">
+      <!-- Toast container -->
+      <div class="toast-container" id="toast-container"></div>
+
+      <!-- Page Header -->
+      <div class="page-header animate-fadeInUp">
+        <div class="page-header-left">
+          <div class="page-header-title">📋 Detection History</div>
+          <div class="page-header-sub">Full audit log · SQLite · Real-Time updates every 5s</div>
+        </div>
+        <div class="export-bar">
+          <button class="btn btn-ghost btn-sm" id="btn-csv-all"   onclick="API.downloadCSV(30)">📥 Export CSV (30d)</button>
+          <button class="btn btn-ghost btn-sm" id="btn-csv-wl"    onclick="API.downloadCSV(30,'wildlife')">🐅 Wildlife CSV</button>
+          <button class="btn btn-ghost btn-sm" id="btn-csv-an"    onclick="API.downloadCSV(30,'human')">👁 Anomaly CSV</button>
+          <button class="btn btn-primary btn-sm" id="btn-pdf"     onclick="API.downloadReport()">📄 Download PDF Report</button>
+          <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-muted);">
+            Last sync: <span id="last-sync">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats row -->
+      <div class="flex gap-12 mb-16 flex-wrap" id="hist-stats-row">
+        <div class="stat-mini"><div class="stat-mini-val" id="hs-today-total">—</div><div class="stat-mini-lbl">TODAY TOTAL</div></div>
+        <div class="stat-mini"><div class="stat-mini-val" style="color:var(--red-alert);" id="hs-today-wl">—</div><div class="stat-mini-lbl">TODAY WILDLIFE</div></div>
+        <div class="stat-mini"><div class="stat-mini-val" style="color:var(--yellow-warn);" id="hs-today-an">—</div><div class="stat-mini-lbl">TODAY ANOMALY</div></div>
+        <div class="stat-mini"><div class="stat-mini-val" style="color:var(--blue-neon);" id="hs-week-total">—</div><div class="stat-mini-lbl">WEEK TOTAL</div></div>
+        <div class="stat-mini"><div class="stat-mini-val" style="color:var(--green-safe);" id="hs-month-total">—</div><div class="stat-mini-lbl">MONTH TOTAL</div></div>
+      </div>
+
+      <!-- Filter Bar -->
+      <div class="hist-filter-bar animate-fadeInUp">
+        <span style="font-family:'Orbitron',sans-serif;font-size:11px;color:var(--blue-neon);white-space:nowrap;">FILTERS</span>
+        <select id="f-days">
+          <option value="1">Today</option>
+          <option value="7" selected>Last 7 Days</option>
+          <option value="30">Last 30 Days</option>
+          <option value="365">All Time</option>
+        </select>
+        <select id="f-category">
+          <option value="">All Types</option>
+          <option value="wildlife">🐅 Wildlife</option>
+          <option value="human">👁 Human Anomaly</option>
+        </select>
+        <select id="f-label">
+          <option value="">All Labels</option>
+        </select>
+        <select id="f-camera">
+          <option value="">All Cameras</option>
+        </select>
+        <select id="f-source">
+          <option value="">All Sources</option>
+          <option value="live">Live</option>
+          <option value="upload_image">Upload Image</option>
+          <option value="upload_video">Upload Video</option>
+        </select>
+        <button class="btn btn-primary btn-sm" id="btn-apply-filter">Apply</button>
+        <button class="btn btn-ghost btn-sm"   id="btn-clear-filter">Clear</button>
+        <span style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-muted);margin-left:auto;">
+          Showing <span id="f-count">—</span> rows
+        </span>
+      </div>
+
+      <!-- History Table -->
+      <div class="glass-card animate-fadeInUp" style="padding:0;">
+        <div class="hist-table-wrap">
+          <table class="hist-table" id="hist-table">
+            <thead>
+              <tr>
+                <th data-col="id">#</th>
+                <th data-col="timestamp">Timestamp</th>
+                <th data-col="camera_id">Camera</th>
+                <th data-col="category">Type</th>
+                <th data-col="label">Label</th>
+                <th data-col="confidence">Confidence</th>
+                <th data-col="status">Status</th>
+                <th data-col="source">Source</th>
+                <th>Snapshot</th>
+              </tr>
+            </thead>
+            <tbody id="hist-tbody">
+              <tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text-muted);">Loading history…</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        <div class="hist-pagination" style="padding:12px;">
+          <button id="btn-first-page" onclick="gotoPage(1)">«</button>
+          <button id="btn-prev-page"  onclick="gotoPage(_page - 1)">‹</button>
+          <span class="page-info" id="page-info">Page 1</span>
+          <button id="btn-next-page"  onclick="gotoPage(_page + 1)">›</button>
+          <button id="btn-last-page"  onclick="gotoPage(_totalPages)">»</button>
+          <span style="font-size:11px;color:var(--text-muted);margin-left:8px;">
+            <select id="f-limit" style="background:var(--bg-dark);border:1px solid var(--border-glass);color:var(--text-secondary);border-radius:4px;padding:3px 8px;font-size:11px;">
+              <option value="25" selected>25/page</option>
+              <option value="50">50/page</option>
+              <option value="100">100/page</option>
+            </select>
+          </span>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Snapshot lightbox -->
+  <div id="snap-lightbox" style="display:none;position:fixed;inset:0;z-index:9990;background:rgba(0,0,0,0.85);backdrop-filter:blur(8px);align-items:center;justify-content:center;" onclick="this.style.display='none'">
+    <img id="snap-lb-img" src="" style="max-width:90vw;max-height:90vh;border-radius:12px;border:2px solid var(--border-glow);box-shadow:0 0 60px rgba(0,212,255,0.3);">
+  </div>
+
+  <script src="nav.js"></script>
+  <script>
+  /* ════════════════════════════════════════════════════════════
+     SentinelAI – history.html
+     Detection History Table with live API polling
+  ════════════════════════════════════════════════════════════ */
+
+  let _page        = 1;
+  let _limit       = 25;
+  let _totalPages  = 1;
+  let _totalRows   = 0;
+  let _sortCol     = 'timestamp';
+  let _sortDir     = 'desc';
+  let _rows        = [];
+
+  // ── Filter state ─────────────────────────────────────────
+  function getFilters() {
+    return {
+      days:     parseInt(document.getElementById('f-days').value)    || 7,
+      category: document.getElementById('f-category').value          || '',
+      label:    document.getElementById('f-label').value             || '',
+      camera:   document.getElementById('f-camera').value            || '',
+      source:   document.getElementById('f-source').value            || '',
+      limit:    _limit,
+      offset:   (_page - 1) * _limit,
+    };
+  }
+
+  // ── Load table data ───────────────────────────────────────
+  async function loadHistory() {
+    const f = getFilters();
+    const data = await API.getHistory(f);
+    if (!data) return;
+
+    _totalRows  = data.total;
+    _totalPages = Math.max(1, Math.ceil(_totalRows / _limit));
+    _rows       = data.rows || [];
+
+    renderTable(_rows);
+    renderPagination();
+    document.getElementById('f-count').textContent = _totalRows;
+    document.getElementById('last-sync').textContent = new Date().toLocaleTimeString('en-GB');
+  }
+
+  // ── Render table rows ─────────────────────────────────────
+  function renderTable(rows) {
+    const tbody = document.getElementById('hist-tbody');
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text-muted);">No detections found for the selected filters.</td></tr>`;
+      return;
+    }
+
+    const frag = document.createDocumentFragment();
+    rows.forEach(r => {
+      const tr = document.createElement('tr');
+      const catBadge   = `<span class="hist-badge ${r.category}">${r.category === 'wildlife' ? '🐅 Wildlife' : '👁 Human'}</span>`;
+      const statusLow  = (r.status || '').toLowerCase();
+      const statusBadge= `<span class="hist-badge ${statusLow}">${r.status || '—'}</span>`;
+      const srcLow     = (r.source || '').toLowerCase().replace('-','_');
+      const srcLabel   = { live:'🔴 Live', upload_image:'📁 Image', upload_video:'🎬 Video' }[srcLow] || r.source;
+      const srcBadge   = `<span class="hist-badge ${srcLow}">${srcLabel}</span>`;
+      const confStr    = r.confidence != null ? r.confidence.toFixed(1) + '%' : '—';
+      const snap       = r.image_path
+        ? `<img class="snap-thumb" src="http://localhost:5000/${r.image_path}" loading="lazy" onerror="this.style.display='none'" onclick="openSnap(this.src)">`
+        : '<span style="color:var(--text-muted);font-size:10px;">—</span>';
+
+      tr.innerHTML = `
+        <td style="color:var(--text-muted);font-family:'Share Tech Mono',monospace;">${r.id}</td>
+        <td style="font-family:'Share Tech Mono',monospace;font-size:11px;">${r.timestamp}</td>
+        <td><span style="color:var(--blue-neon);font-family:'Share Tech Mono',monospace;">${r.camera_id}</span></td>
+        <td>${catBadge}</td>
+        <td style="color:var(--text-primary);font-weight:600;">${r.label}</td>
+        <td style="color:${r.confidence > 70 ? 'var(--red-alert)' : r.confidence > 40 ? 'var(--yellow-warn)' : 'var(--green-safe)'};font-family:'Share Tech Mono',monospace;font-weight:700;">${confStr}</td>
+        <td>${statusBadge}</td>
+        <td>${srcBadge}</td>
+        <td>${snap}</td>`;
+      frag.appendChild(tr);
+    });
+    tbody.innerHTML = '';
+    tbody.appendChild(frag);
+  }
+
+  // ── Pagination render ─────────────────────────────────────
+  function renderPagination() {
+    document.getElementById('page-info').textContent = `Page ${_page} / ${_totalPages}`;
+    document.getElementById('btn-first-page').disabled = _page <= 1;
+    document.getElementById('btn-prev-page').disabled  = _page <= 1;
+    document.getElementById('btn-next-page').disabled  = _page >= _totalPages;
+    document.getElementById('btn-last-page').disabled  = _page >= _totalPages;
+  }
+
+  function gotoPage(p) {
+    p = Math.max(1, Math.min(p, _totalPages));
+    if (p === _page) return;
+    _page = p;
+    loadHistory();
+  }
+
+  // ── Filter dropdowns population ───────────────────────────
+  async function populateFilterDropdowns() {
+    const category = document.getElementById('f-category').value;
+    const filters  = await API.getHistoryFilters(category);
+    if (!filters) return;
+
+    const labelSel  = document.getElementById('f-label');
+    const cameraSel = document.getElementById('f-camera');
+    const currentLabel  = labelSel.value;
+    const currentCamera = cameraSel.value;
+
+    labelSel.innerHTML  = '<option value="">All Labels</option>' +
+      (filters.labels  || []).map(l => `<option value="${l}" ${l===currentLabel?'selected':''}>${l}</option>`).join('');
+    cameraSel.innerHTML = '<option value="">All Cameras</option>' +
+      (filters.cameras || []).map(c => `<option value="${c}" ${c===currentCamera?'selected':''}>${c}</option>`).join('');
+  }
+
+  // ── Stats mini cards ──────────────────────────────────────
+  async function loadStats() {
+    const s = await API.getHistoryStats();
+    if (!s) return;
+    document.getElementById('hs-today-total').textContent = s.today?.total    ?? '—';
+    document.getElementById('hs-today-wl').textContent    = s.today?.wildlife ?? '—';
+    document.getElementById('hs-today-an').textContent    = s.today?.human    ?? '—';
+    document.getElementById('hs-week-total').textContent  = s.week?.total     ?? '—';
+    document.getElementById('hs-month-total').textContent = s.month?.total    ?? '—';
+  }
+
+  // ── Snapshot lightbox ─────────────────────────────────────
+  function openSnap(src) {
+    document.getElementById('snap-lb-img').src = src;
+    document.getElementById('snap-lightbox').style.display = 'flex';
+  }
+
+  // ── Sort on column click ──────────────────────────────────
+  document.querySelectorAll('.hist-table thead th[data-col]').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (_sortCol === col) {
+        _sortDir = _sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        _sortCol = col;
+        _sortDir = 'desc';
+      }
+      document.querySelectorAll('.hist-table thead th').forEach(t => t.className = '');
+      th.className = 'sort-' + _sortDir;
+      // Client-side sort of current page rows
+      _rows.sort((a, b) => {
+        let av = a[col], bv = b[col];
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        return _sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+      });
+      renderTable(_rows);
+    });
+  });
+
+  // ── Filter button events ──────────────────────────────────
+  document.getElementById('btn-apply-filter').addEventListener('click', () => {
+    _page = 1;
+    loadHistory();
+    populateFilterDropdowns();
+  });
+
+  document.getElementById('btn-clear-filter').addEventListener('click', () => {
+    document.getElementById('f-days').value     = '7';
+    document.getElementById('f-category').value = '';
+    document.getElementById('f-label').value    = '';
+    document.getElementById('f-camera').value   = '';
+    document.getElementById('f-source').value   = '';
+    _page = 1;
+    loadHistory();
+    populateFilterDropdowns();
+  });
+
+  document.getElementById('f-category').addEventListener('change', populateFilterDropdowns);
+
+  document.getElementById('f-limit').addEventListener('change', (e) => {
+    _limit = parseInt(e.target.value) || 25;
+    _page  = 1;
+    loadHistory();
+  });
+
+  // ── Boot ─────────────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', () => {
+    loadHistory();
+    loadStats();
+    populateFilterDropdowns();
+
+    // Auto-refresh every 5s
+    setInterval(() => {
+      loadHistory();
+      loadStats();
+    }, 5000);
+  });
+  </script>
+</body>
+</html>

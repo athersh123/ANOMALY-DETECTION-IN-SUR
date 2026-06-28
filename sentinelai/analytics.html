@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SentinelAI – Analytics</title>
+  <meta name="description" content="SentinelAI Analytics – animal detection statistics, anomaly frequency, daily alert counts and threat heatmaps.">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    .analytics-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+    @media(max-width:900px){ .analytics-grid { grid-template-columns: 1fr; } }
+
+    .kpi-mini-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    @media(max-width:900px){ .kpi-mini-grid { grid-template-columns: repeat(2,1fr); } }
+
+    .kpi-mini {
+      padding: 16px;
+      text-align: center;
+    }
+    .kpi-mini-val {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 26px;
+      font-weight: 800;
+      margin-bottom: 4px;
+      line-height: 1;
+    }
+    .kpi-mini-label { font-size: 10px; color: var(--text-muted); letter-spacing: 1.5px; text-transform: uppercase; }
+    .kpi-mini-trend { font-size: 11px; margin-top: 6px; font-family: 'Share Tech Mono', monospace; }
+
+    .heatmap-canvas-wrap {
+      width: 100%;
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      position: relative;
+      background: #030910;
+    }
+    .heatmap-canvas-wrap canvas {
+      display: block;
+      width: 100% !important;
+      height: 240px !important;
+    }
+
+    .period-select-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .period-btn {
+      padding: 5px 14px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      border: 1px solid var(--border-glass);
+      background: var(--bg-glass);
+      cursor: pointer;
+      transition: var(--transition);
+      letter-spacing: 0.5px;
+    }
+    .period-btn:hover, .period-btn.active {
+      color: var(--blue-neon);
+      border-color: var(--border-glow);
+      background: var(--bg-glass-light);
+    }
+
+    .insight-card {
+      padding: 14px 16px;
+      border-radius: var(--radius-md);
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      transition: var(--transition);
+    }
+    .insight-card:hover { border-color: var(--border-glow); }
+    .insight-icon { font-size: 22px; flex-shrink: 0; margin-top: 2px; }
+    .insight-title { font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 3px; }
+    .insight-desc  { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+  </style>
+</head>
+<body>
+<div class="app-shell" id="app-shell">
+  <div class="main-content">
+    <div class="page-content">
+
+      <!-- Header -->
+      <div class="page-header animate-fadeInUp">
+        <div class="page-header-left">
+          <div class="page-header-title">📊 Analytics</div>
+          <div class="page-header-sub">Performance Metrics · Detection Statistics · Threat Intelligence</div>
+        </div>
+        <div class="period-select-row">
+          <span style="font-size:11px;color:var(--text-muted);">Period:</span>
+          <button class="period-btn" onclick="setPeriod('24h',this)">24H</button>
+          <button class="period-btn active" onclick="setPeriod('7d',this)">7D</button>
+          <button class="period-btn" onclick="setPeriod('30d',this)">30D</button>
+          <button class="period-btn" onclick="setPeriod('90d',this)">90D</button>
+          <button class="btn btn-ghost btn-sm" onclick="showToast('Report Generated','Analytics PDF prepared for download','alert-info')">⬇ Export</button>
+        </div>
+      </div>
+
+      <!-- KPI Mini Row -->
+      <div class="kpi-mini-grid stagger mb-24">
+        <div class="glass-card kpi-mini">
+          <div class="kpi-mini-val" style="color:var(--blue-neon);">247</div>
+          <div class="kpi-mini-label">Total Detections</div>
+          <div class="kpi-mini-trend" style="color:var(--green-safe);">▲ 18% vs last period</div>
+        </div>
+        <div class="glass-card kpi-mini">
+          <div class="kpi-mini-val" style="color:var(--red-alert);">142</div>
+          <div class="kpi-mini-label">Wildlife Events</div>
+          <div class="kpi-mini-trend" style="color:var(--red-alert);">▲ 24% vs last period</div>
+        </div>
+        <div class="glass-card kpi-mini">
+          <div class="kpi-mini-val" style="color:var(--orange-warn);">105</div>
+          <div class="kpi-mini-label">Human Anomalies</div>
+          <div class="kpi-mini-trend" style="color:var(--green-safe);">▼ 8% vs last period</div>
+        </div>
+        <div class="glass-card kpi-mini">
+          <div class="kpi-mini-val" style="color:var(--green-safe);">97.2<span style="font-size:14px">%</span></div>
+          <div class="kpi-mini-label">Detection Accuracy</div>
+          <div class="kpi-mini-trend" style="color:var(--green-safe);">▲ 1.4% vs last period</div>
+        </div>
+      </div>
+
+      <!-- Charts Grid Row 1 -->
+      <div class="analytics-grid mb-0">
+
+        <!-- Animal Detection Statistics -->
+        <div class="glass-card">
+          <div class="card-header">
+            <div class="card-title">🐾 Animal Detection Statistics</div>
+            <span class="badge badge-info">7 Days</span>
+          </div>
+          <div class="card-body">
+            <div class="chart-wrap" style="height:240px;">
+              <canvas id="animal-stats-chart" class="chart-canvas"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Anomaly Frequency -->
+        <div class="glass-card">
+          <div class="card-header">
+            <div class="card-title">🔍 Anomaly Frequency</div>
+            <span class="badge badge-info">7 Days</span>
+          </div>
+          <div class="card-body">
+            <div class="chart-wrap" style="height:240px;">
+              <canvas id="anomaly-freq-chart-analytics" class="chart-canvas"></canvas>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Spacer -->
+      <div style="height:20px;"></div>
+
+      <!-- Charts Grid Row 2 -->
+      <div class="analytics-grid mb-0">
+
+        <!-- Daily Alert Count Line -->
+        <div class="glass-card">
+          <div class="card-header">
+            <div class="card-title">📈 Daily Alert Count</div>
+            <div class="flex gap-8 items-center">
+              <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:#ff6b35;"><div style="width:10px;height:2px;background:#ff6b35;border-radius:2px;"></div>Wildlife</div>
+              <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:#00d4ff;"><div style="width:10px;height:2px;background:#00d4ff;border-radius:2px;"></div>Human</div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="chart-wrap" style="height:240px;">
+              <canvas id="daily-alert-chart" class="chart-canvas"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Threat Distribution Doughnut -->
+        <div class="glass-card">
+          <div class="card-header">
+            <div class="card-title">🍩 Threat Distribution</div>
+          </div>
+          <div class="card-body">
+            <div class="chart-wrap" style="height:240px;">
+              <canvas id="threat-dist-chart" class="chart-canvas"></canvas>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Spacer -->
+      <div style="height:20px;"></div>
+
+      <!-- Radar Chart + Heatmap -->
+      <div class="analytics-grid mb-24" style="grid-template-columns:1fr 1fr;">
+
+        <!-- Radar: Model Performance -->
+        <div class="glass-card">
+          <div class="card-header">
+            <div class="card-title">🎯 AI Model Performance Radar</div>
+          </div>
+          <div class="card-body">
+            <div class="chart-wrap" style="height:260px;">
+              <canvas id="radar-chart" class="chart-canvas"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Threat Heatmap -->
+        <div class="glass-card">
+          <div class="card-header">
+            <div class="card-title">🌡️ Threat Heatmap</div>
+            <span class="badge badge-critical">Live</span>
+          </div>
+          <div class="card-body" style="padding:14px;">
+            <div class="heatmap-canvas-wrap">
+              <canvas id="heatmap-canvas" width="560" height="240"></canvas>
+            </div>
+            <div style="display:flex;gap:16px;margin-top:10px;justify-content:center;flex-wrap:wrap;">
+              <div style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--green-safe);">
+                <div style="width:12px;height:4px;border-radius:2px;background:var(--green-safe);"></div>Low Risk
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--yellow-warn);">
+                <div style="width:12px;height:4px;border-radius:2px;background:var(--yellow-warn);"></div>Medium
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--orange-warn);">
+                <div style="width:12px;height:4px;border-radius:2px;background:var(--orange-warn);"></div>High
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--red-alert);">
+                <div style="width:12px;height:4px;border-radius:2px;background:var(--red-alert);"></div>Critical
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- AI Insights Row -->
+      <div class="glass-card mb-24">
+        <div class="card-header">
+          <div class="card-title">💡 AI Insights &amp; Recommendations</div>
+          <span class="badge badge-info">Auto-Generated</span>
+        </div>
+        <div class="card-body">
+          <div class="grid-2" style="gap:12px;">
+            <div class="insight-card">
+              <div class="insight-icon">🐅</div>
+              <div>
+                <div class="insight-title">Tiger Activity Peak: 06:00–09:00 &amp; 18:00–21:00</div>
+                <div class="insight-desc">Tiger detections concentrate around dawn/dusk. Recommend increased patrol frequency during these windows and enhanced CAM-01 resolution settings.</div>
+              </div>
+            </div>
+            <div class="insight-card">
+              <div class="insight-icon">📈</div>
+              <div>
+                <div class="insight-title">24% Rise in Wildlife Events This Week</div>
+                <div class="insight-desc">Seasonal movement patterns detected. Cross-referencing with weather data suggests monsoon displacement. Consider temporary boundary fence reinforcement.</div>
+              </div>
+            </div>
+            <div class="insight-card">
+              <div class="insight-icon">🥊</div>
+              <div>
+                <div class="insight-title">Fighting Hotspot: East Gate (CAM-04)</div>
+                <div class="insight-desc">3 of 4 fighting detections originated from East Gate area between 13:00–15:00. Recommend visible security presence during peak hours.</div>
+              </div>
+            </div>
+            <div class="insight-card">
+              <div class="insight-icon">🎯</div>
+              <div>
+                <div class="insight-title">False Positive Rate Down to 2.8%</div>
+                <div class="insight-desc">YOLO v8 fine-tuning on domain-specific dataset has improved precision significantly. Autoencoder threshold recalibration recommended for night conditions.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="nav.js"></script>
+<script src="script.js"></script>
+<script>
+const days7  = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const days30 = Array.from({length:30}, (_,i)=>`D${i+1}`);
+
+document.addEventListener('DOMContentLoaded', () => {
+  buildAllCharts('7d');
+  drawHeatmap('heatmap-canvas');
+  // Refresh heatmap periodically
+  setInterval(() => drawHeatmap('heatmap-canvas'), 5000);
+});
+
+function setPeriod(period, btn) {
+  document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  buildAllCharts(period);
+}
+
+function buildAllCharts(period) {
+  const labels = period === '24h'
+    ? Array.from({length:24}, (_,i)=>`${String(i).padStart(2,'0')}:00`)
+    : period === '7d' ? days7
+    : period === '30d' ? days30
+    : Array.from({length:12}, (_,i)=>['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][i]);
+
+  const len = labels.length;
+  const randArr = (min,max) => Array.from({length:len}, () => randInt(min,max));
+
+  // Animal Detection Statistics
+  createBarChart('animal-stats-chart', labels, [
+    { label:'Tiger',    data: randArr(0,4),  backgroundColor:'rgba(255,45,85,0.5)',   borderColor:'#ff2d55', borderWidth:2 },
+    { label:'Elephant', data: randArr(0,4),  backgroundColor:'rgba(122,176,212,0.4)', borderColor:'#7ab0d4', borderWidth:2 },
+    { label:'Leopard',  data: randArr(0,3),  backgroundColor:'rgba(255,149,0,0.5)',   borderColor:'#ff9500', borderWidth:2 },
+    { label:'Bear',     data: randArr(0,2),  backgroundColor:'rgba(139,69,19,0.4)',   borderColor:'#8b4513', borderWidth:2 },
+    { label:'Lion',     data: randArr(0,2),  backgroundColor:'rgba(255,204,0,0.4)',   borderColor:'#ffcc00', borderWidth:2 },
+    { label:'Cheetah',  data: randArr(0,2),  backgroundColor:'rgba(255,140,0,0.3)',   borderColor:'#ff8c00', borderWidth:2 },
+  ]);
+
+  // Anomaly Frequency
+  createBarChart('anomaly-freq-chart-analytics', labels, [
+    { label:'Running',    data: randArr(0,6),  backgroundColor:'rgba(255,204,0,0.5)', borderColor:'#ffcc00', borderWidth:2 },
+    { label:'Fighting',   data: randArr(0,4),  backgroundColor:'rgba(255,45,85,0.5)', borderColor:'#ff2d55', borderWidth:2 },
+    { label:'Crowd',      data: randArr(0,5),  backgroundColor:'rgba(255,140,0,0.4)', borderColor:'#ff8c00', borderWidth:2 },
+    { label:'Vehicle',    data: randArr(0,3),  backgroundColor:'rgba(255,45,85,0.4)', borderColor:'#ff2d55', borderWidth:2 },
+    { label:'Suspicious', data: randArr(0,7),  backgroundColor:'rgba(255,149,0,0.4)', borderColor:'#ff9500', borderWidth:2 },
+  ]);
+
+  // Daily Alert Count Line Chart
+  createLineChart('daily-alert-chart', labels, [
+    {
+      label: 'Wildlife Alerts',
+      data: randArr(3,14),
+      borderColor: '#ff6b35',
+      backgroundColor: 'rgba(255,107,53,0.1)',
+      fill: true, tension: 0.4,
+      pointBackgroundColor: '#ff6b35',
+    },
+    {
+      label: 'Human Anomalies',
+      data: randArr(2,12),
+      borderColor: '#00d4ff',
+      backgroundColor: 'rgba(0,212,255,0.08)',
+      fill: true, tension: 0.4,
+      pointBackgroundColor: '#00d4ff',
+    },
+  ]);
+
+  // Threat Distribution Doughnut
+  createDoughnutChart('threat-dist-chart',
+    ['Tiger','Elephant','Leopard','Bear','Lion','Cheetah','Fighting','Running','Crowd','Vehicle'],
+    [28, 18, 14, 9, 7, 6, 12, 15, 10, 8],
+    ['#ff2d55','#7ab0d4','#ff9500','#8b4513','#ffcc00','#ff8c00','#ff2d55','#ffcc00','#ff8c00','#ff4500']
+  );
+
+  // Radar Chart
+  createRadarChart('radar-chart',
+    ['Precision','Recall','F1 Score','Speed','Accuracy','Reliability'],
+    [
+      {
+        label: 'Wildlife YOLO',
+        data: [97, 94, 95, 88, 97, 99],
+        borderColor: '#ff6b35',
+        backgroundColor: 'rgba(255,107,53,0.12)',
+        pointBackgroundColor: '#ff6b35',
+        borderWidth: 2,
+      },
+      {
+        label: 'Human Autoencoder',
+        data: [92, 89, 90, 95, 93, 96],
+        borderColor: '#00d4ff',
+        backgroundColor: 'rgba(0,212,255,0.08)',
+        pointBackgroundColor: '#00d4ff',
+        borderWidth: 2,
+      },
+    ]
+  );
+}
+</script>
+</body>
+</html>

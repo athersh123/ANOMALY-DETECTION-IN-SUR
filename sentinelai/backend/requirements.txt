@@ -1,0 +1,13 @@
+# SentinelAI – Python Dependencies
+# Install with: pip install -r requirements.txt
+
+flask==3.0.3
+flask-cors==4.0.1
+ultralytics==8.2.50
+opencv-python==4.10.0.84
+tensorflow==2.16.1
+numpy==1.26.4
+Pillow==10.3.0
+fpdf2==2.7.9
+werkzeug==3.0.3
+requests==2.31.0

@@ -1,0 +1,1300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SentinelAI – Wildlife Surveillance</title>
+  <meta name="description" content="SentinelAI wildlife surveillance – YOLO-based detection for tigers, leopards, lions, bears, elephants and cheetahs.">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="api.js"></script>
+  <style>
+    .bbox-overlay {
+      position: absolute;
+      border: 2px solid var(--red-alert);
+      box-shadow: 0 0 12px rgba(255,45,85,0.6), inset 0 0 12px rgba(255,45,85,0.05);
+      pointer-events: none;
+      animation: bbox-appear 0.3s ease forwards;
+    }
+    .bbox-label {
+      position: absolute;
+      top: -22px;
+      left: -2px;
+      background: var(--red-alert);
+      color: white;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 3px 3px 3px 0;
+      white-space: nowrap;
+    }
+    @keyframes bbox-appear {
+      from { opacity: 0; transform: scale(0.95); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+
+    .map-container-full {
+      width: 100%;
+      aspect-ratio: 16/6;
+      border-radius: var(--radius-md);
+      background: #030c1a;
+      border: 1px solid var(--border-glass);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .map-grid-full {
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+
+    .animal-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    @media(max-width:900px){ .animal-grid { grid-template-columns: repeat(2,1fr); } }
+    @media(max-width:600px){ .animal-grid { grid-template-columns: 1fr; } }
+
+    .threat-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+    .threat-critical { background: rgba(255,45,85,0.15); color: var(--red-alert); border: 1px solid rgba(255,45,85,0.4); }
+    .threat-high     { background: rgba(255,140,0,0.15); color: var(--orange-warn); border: 1px solid rgba(255,140,0,0.4); }
+    .threat-medium   { background: rgba(255,204,0,0.15); color: var(--yellow-warn); border: 1px solid rgba(255,204,0,0.4); }
+  </style>
+</head>
+<body>
+<div class="app-shell" id="app-shell">
+  <div class="main-content">
+    <div class="page-content">
+
+      <!-- Header -->
+      <div class="page-header animate-fadeInUp">
+        <div class="page-header-left">
+          <div class="page-header-title">🐾 Wildlife Surveillance</div>
+          <div class="page-header-sub">YOLO v8 Animal Detection · Real-Time Boundary Monitoring</div>
+        </div>
+        <div class="flex gap-12">
+          <div class="threat-indicator threat-critical" id="wildlife-threat-badge">
+            🔴 INTRUSION ACTIVE
+          </div>
+          <button class="btn btn-danger btn-sm" id="btn-clear-alerts" onclick="clearAlert()">✖ Clear Alerts</button>
+        </div>
+      </div>
+
+      <!-- Intrusion Banner -->
+      <div class="intrusion-banner" id="intrusion-banner">
+        <div class="intrusion-icon">⚠</div>
+        <div class="intrusion-text">
+          <div class="intrusion-title">⚠ WILDLIFE INTRUSION DETECTED</div>
+          <div class="intrusion-desc" id="intrusion-desc">Waiting for live detection data…</div>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="document.getElementById('intrusion-banner').style.display='none'">Dismiss</button>
+      </div>
+
+      <!-- Main Grid: Feed + Detection Panel -->
+      <div class="grid-2 mb-24" style="grid-template-columns:1fr 340px;">
+
+        <!-- Live Feed -->
+        <div class="glass-card">
+          <div class="card-header">
+            <div class="card-title">📡 Wildlife Camera Feed</div>
+            <div class="flex gap-8 items-center">
+              <select id="wl-cam-select" style="background:var(--bg-glass);border:1px solid var(--border-glass);color:var(--text-secondary);border-radius:6px;padding:4px 10px;font-size:12px;font-family:inherit;">
+                <option>CAM-01 · North Perimeter</option>
+                <option>CAM-07 · South Forest</option>
+                <option>CAM-08 · Water Hole</option>
+                <option>CAM-09 · Patrol Route A</option>
+              </select>
+              <!-- Dynamic detector status indicator -->
+              <span id="wl-status-badge" class="badge badge-low" style="min-width:90px;text-align:center;">⏹ STOPPED</span>
+            </div>
+          </div>
+          <div class="card-body" style="padding:14px;">
+            <div class="feed-container" id="wildlife-feed" style="position:relative;">
+              <img
+                src="https://placehold.co/860x484/030c1a/00d4ff?text=Click+Start+Monitoring"
+                alt="Wildlife Live Feed"
+                class="feed-img"
+                id="wl-feed-img"
+                onerror="this.src='https://placehold.co/860x484/030c1a/00d4ff?text=Backend+Offline'; this.style.objectFit='contain';"
+              >
+              <div class="scanline"></div>
+              <div class="feed-overlay"></div>
+
+              <div class="bbox-overlay" id="bbox" style="display:none;top:30%;left:20%;width:22%;height:38%;">
+                <div class="bbox-label" id="bbox-label"></div>
+              </div>
+
+              <div class="feed-hud">
+                <div class="feed-corners">
+                  <div class="corner corner-tl"></div>
+                  <div class="corner corner-tr"></div>
+                  <div class="corner corner-bl"></div>
+                  <div class="corner corner-br"></div>
+                </div>
+                <div class="feed-info-top">
+                  <div class="feed-cam-id" id="wl-cam-label">CAM-01 · NORTH PERIMETER</div>
+                  <div class="feed-live-badge"><span class="live-dot"></span> LIVE</div>
+                </div>
+                <div class="feed-info-bottom">
+                  <div class="feed-timestamp"></div>
+                  <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:rgba(255,255,255,0.7);background:rgba(0,0,0,0.6);padding:3px 8px;border-radius:4px;">
+                    YOLO v8 · 30 FPS · IR Mode
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Detect + Upload + Monitoring controls -->
+            <div class="flex items-center justify-between" style="margin-top:12px;flex-wrap:wrap;gap:8px;">
+              <div class="flex gap-8">
+                <!-- Monitoring start/stop -->
+                <button class="btn btn-primary btn-sm" id="btn-wl-start"
+                        style="background:linear-gradient(135deg,#00c853,#00897b);border:none;"
+                        onclick="wlStartMonitoring()">▶ Start Monitoring</button>
+                <button class="btn btn-danger btn-sm" id="btn-wl-stop" disabled
+                        onclick="wlStopMonitoring()">⏹ Stop</button>
+                <span style="width:1px;background:var(--border-glass);align-self:stretch;"></span>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-clear-bbox" onclick="document.getElementById('bbox').style.display='none'">✕ Clear Box</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btn-wl-upload-img" onclick="event.preventDefault(); document.getElementById('wl-img-input').click()">📁 Upload Image</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-wl-upload-vid" onclick="event.preventDefault(); document.getElementById('wl-vid-input').click()">🎬 Upload Video</button>
+              </div>
+              <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-muted);">
+                FPS: <span style="color:var(--green-safe);" id="fps-counter">0</span> ·
+                Objects: <span style="color:var(--yellow-warn);" id="obj-counter">0</span>
+              </div>
+            </div>
+            <!-- Hidden file inputs -->
+            <input type="file" id="wl-img-input" accept=".jpg,.jpeg,.png,.bmp,.webp" style="display:none">
+            <input type="file" id="wl-vid-input" accept=".mp4,.avi,.mov,.mkv" style="display:none">
+          </div>
+        </div>
+
+        <!-- Right: Detected Animal Card + Alert -->
+        <div class="flex flex-col gap-16">
+
+          <!-- Active Detection Card -->
+          <div class="glass-card danger" style="display:none;">
+            <div class="card-header">
+              <div class="card-title">&#x1F6A8; Detected Animal</div>
+              <span class="badge badge-critical">CRITICAL</span>
+            </div>
+            <div class="card-body text-center" id="detected-card">
+              <div style="font-size:72px;margin:10px 0;filter:drop-shadow(0 0 20px rgba(255,107,53,0.8));" id="det-emoji">🐘</div>
+              <div style="font-family:'Orbitron',sans-serif;font-size:24px;font-weight:800;color:var(--text-primary);letter-spacing:2px;margin-bottom:4px;" id="det-name">TIGER</div>
+              <div style="font-size:11px;color:var(--text-muted);letter-spacing:2px;margin-bottom:16px;" id="det-species">Panthera tigris</div>
+
+              <!-- Confidence Ring -->
+              <div class="anomaly-ring-wrap" style="padding:8px;">
+                <div class="anomaly-ring" id="conf-ring">
+                  <!-- ring built by JS -->
+                </div>
+              </div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:8px;margin-bottom:16px;">Detection Confidence</div>
+
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:left;">
+                <div style="background:rgba(255,45,85,0.08);border:1px solid rgba(255,45,85,0.2);border-radius:8px;padding:10px;">
+                  <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;">THREAT LEVEL</div>
+                  <div style="font-family:'Orbitron',sans-serif;font-size:13px;color:var(--red-alert);font-weight:700;" id="det-threat">CRITICAL</div>
+                </div>
+                <div style="background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.15);border-radius:8px;padding:10px;">
+                  <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;">DISTANCE</div>
+                  <div style="font-family:'Orbitron',sans-serif;font-size:13px;color:var(--blue-neon);font-weight:700;">~120m</div>
+                </div>
+                <div style="background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.15);border-radius:8px;padding:10px;">
+                  <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;">CAMERA</div>
+                  <div style="font-family:'Orbitron',sans-serif;font-size:13px;color:var(--blue-neon);font-weight:700;">CAM-01</div>
+                </div>
+                <div style="background:rgba(255,204,0,0.08);border:1px solid rgba(255,204,0,0.15);border-radius:8px;padding:10px;">
+                  <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;">DIRECTION</div>
+                  <div style="font-family:'Orbitron',sans-serif;font-size:13px;color:var(--yellow-warn);font-weight:700;">NORTH-W</div>
+                </div>
+              </div>
+              <button class="btn btn-danger w-full" style="margin-top:14px;" onclick="showToast('Alert Raised','Wildlife response team notified','alert-critical')">
+                &#x1F6A8; Raise Emergency Alert
+              </button>
+            </div>
+          </div>
+
+          <!-- Detection History Mini -->
+          <div class="glass-card">
+            <div class="card-header">
+              <div class="card-title">📋 Recent Detections</div>
+            </div>
+            <div class="card-body" style="padding:12px;">
+              <div class="alert-list" id="wl-recent">
+                <!-- Populated live by API polling -->
+                <div style="padding:16px;text-align:center;font-size:12px;color:var(--text-muted);" id="wl-no-detections">
+                  Waiting for live detections…
+                </div>
+              </div>
+            </div>
+          </div>
+
+            <!-- Upload Job Output (shows backend job JSON + processed URL) -->
+            <div class="glass-card" id="wl-job-output" style="display:block;">
+              <div class="card-header">
+                <div class="card-title">🖥️ Upload Job Output</div>
+              </div>
+              <div class="card-body" style="padding:10px;">
+                <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Last upload job result (visible after video processing)</div>
+                <div id="wl-job-output-entries" style="font-family:'Share Tech Mono',monospace;font-size:12px;color:#cfefff;max-height:260px;overflow:auto;background:rgba(0,0,0,0.04);padding:8px;border-radius:8px;">No job output yet</div>
+              </div>
+            </div>
+        </div>
+      </div>
+
+      <!-- ─── Upload Result Panel (image) – full-width, outside grid ─── -->
+      <div class="glass-card mb-24" id="wl-img-result-panel" style="display:none;">
+        <div class="card-header">
+          <div class="card-title">🔍 Upload Detection Result</div>
+          <button class="btn btn-ghost btn-sm" onclick="closeWlImgResult()">✕ Close</button>
+        </div>
+        <div class="card-body" style="padding:14px;">
+          <div style="display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start;">
+            <div>
+              <img id="wl-result-img" src="" alt="Detection result"
+                style="width:100%;max-height:480px;object-fit:contain;border-radius:10px;border:1px solid var(--border-glass);background:#030c1a;display:block;">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              <div class="glass-card" style="padding:16px;">
+                <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;letter-spacing:1px;">DETECTION RESULT</div>
+                <div style="font-size:48px;text-align:center;margin-bottom:10px;" id="wl-res-emoji">🐾</div>
+                <div style="font-family:'Orbitron',sans-serif;font-size:18px;font-weight:700;color:var(--text-primary);text-align:center;margin-bottom:4px;" id="wl-res-name">—</div>
+                <div style="font-size:11px;color:var(--text-muted);text-align:center;margin-bottom:14px;" id="wl-res-species">—</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                  <div style="background:rgba(255,45,85,0.08);border:1px solid rgba(255,45,85,0.2);border-radius:8px;padding:10px;text-align:center;">
+                    <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;">CONFIDENCE</div>
+                    <div style="font-family:'Orbitron',sans-serif;font-size:20px;color:var(--blue-neon);font-weight:700;" id="wl-res-conf">—</div>
+                  </div>
+                  <div style="background:rgba(255,45,85,0.08);border:1px solid rgba(255,45,85,0.2);border-radius:8px;padding:10px;text-align:center;">
+                    <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;">THREAT</div>
+                    <div style="font-family:'Orbitron',sans-serif;font-size:15px;color:var(--red-alert);font-weight:700;" id="wl-res-threat">—</div>
+                  </div>
+                  <div style="background:rgba(0,212,255,0.05);border:1px solid var(--border-glass);border-radius:8px;padding:10px;text-align:center;grid-column:1/-1;">
+                    <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;">DETECTION TIME</div>
+                    <div style="font-family:'Share Tech Mono',monospace;font-size:14px;color:var(--green-safe);font-weight:700;" id="wl-res-time">—</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── Video Upload Result Panel – full-width ─── -->
+      <div class="glass-card mb-24" id="wl-vid-result-panel" style="display:none;">
+        <div class="card-header">
+          <div class="card-title">🎬 Processed Video Result</div>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="closeWlVidResult()">✕ Close</button>
+        </div>
+        <div class="card-body" style="padding:14px;">
+          <div style="display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:start;">
+            <div>
+              <video id="wl-result-video" controls style="width:100%;border-radius:10px;border:1px solid var(--border-glass);background:#000;"></video>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              <div class="glass-card" style="padding:14px;">
+                <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;letter-spacing:1px;">SUMMARY</div>
+                <div style="display:flex;flex-direction:column;gap:8px;" id="wl-vid-stats">
+                  <div style="display:flex;justify-content:space-between;font-size:12px;">
+                    <span style="color:var(--text-muted);">Total Frames</span>
+                    <span style="color:var(--blue-neon);font-family:'Share Tech Mono',monospace;" id="wl-vid-frames">—</span>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;font-size:12px;">
+                    <span style="color:var(--text-muted);">Detections</span>
+                    <span style="color:var(--red-alert);font-family:'Share Tech Mono',monospace;" id="wl-vid-det-count">—</span>
+                  </div>
+                </div>
+              </div>
+              <div class="glass-card" style="padding:14px;max-height:280px;overflow-y:auto;">
+                <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;letter-spacing:1px;">DETECTION EVENTS</div>
+                <div id="wl-vid-det-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── Animal Detection Cards Grid ──────────────────────── -->
+      <div class="glass-card mb-24">
+        <div class="card-header">
+          <div class="card-title">&#x1F981;  Animal Detection Status</div>
+          <span class="badge badge-info">YOLO v8 Enabled</span>
+        </div>
+        <div class="card-body">
+          <div class="animal-grid" id="animal-cards-grid"></div>
+        </div>
+      </div>
+
+      <!-- ─── Village Boundary Map ────────────────────────────── -->
+      <div class="glass-card mb-24">
+        <div class="card-header">
+          <div class="card-title">&#x1F5FA;  Village Boundary Map</div>
+          <div class="flex gap-8">
+            <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--green-safe);">
+              <div style="width:10px;height:10px;border-radius:2px;background:rgba(0,255,136,0.3);border:1px solid var(--green-safe);"></div>
+              Safe Zone
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--red-alert);">
+              <div style="width:10px;height:10px;border-radius:2px;background:rgba(255,45,85,0.3);border:1px solid var(--red-alert);"></div>
+              Danger Zone
+            </div>
+          </div>
+        </div>
+        <div class="card-body" style="padding:14px;">
+          <div class="map-container-full" id="wildlife-map">
+            <div class="map-grid-full"></div>
+
+            <!-- Safe zone -->
+            <div style="position:absolute;top:10%;left:5%;width:42%;height:80%;border-radius:12px;background:radial-gradient(ellipse,rgba(0,255,136,0.06) 0%,transparent 70%);border:1px dashed rgba(0,255,136,0.25);"></div>
+            <div class="map-label safe" style="top:12%;left:8%;">&#x1F3D8;&#xFE0F; SAFE ZONE</div>
+
+            <!-- Danger zone -->
+            <div style="position:absolute;top:15%;right:5%;width:38%;height:70%;border-radius:50%;background:radial-gradient(ellipse,rgba(255,45,85,0.08) 0%,transparent 70%);border:1px dashed rgba(255,45,85,0.35);animation:pulse-danger 3s infinite;"></div>
+            <div class="map-label danger" style="top:17%;right:8%;">🐾 DANGER ZONE</div>
+
+            <!-- Camera markers -->
+            <div class="map-marker camera" style="top:25%;left:22%;"></div>
+            <div class="map-marker camera" style="top:55%;left:30%;"></div>
+            <div class="map-marker camera" style="top:70%;left:15%;"></div>
+            <div class="map-marker camera" style="top:40%;left:45%;"></div>
+            <div class="map-marker camera" style="top:20%;right:25%;"></div>
+            <div class="map-marker camera" style="top:60%;right:15%;"></div>
+
+            <!-- Animal markers -->
+            <div class="map-marker animal" style="top:35%;right:28%;" title="Tiger Detected"></div>
+            <div class="map-marker animal" style="top:65%;right:20%;background:var(--orange-warn);box-shadow:0 0 16px var(--orange-warn);" title="Elephant Detected"></div>
+
+            <!-- Village icon -->
+            <div style="position:absolute;top:40%;left:15%;font-size:22px;" title="Village">&#x1F3D8;&#xFE0F;</div>
+
+            <!-- Legend -->
+            <div style="position:absolute;bottom:10px;left:12px;display:flex;flex-direction:column;gap:5px;">
+              <div style="display:flex;align-items:center;gap:6px;font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--blue-neon);">
+                <div style="width:8px;height:8px;border-radius:50%;background:var(--blue-neon);box-shadow:0 0 6px var(--blue-neon);"></div>
+                Camera
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--red-alert);">
+                <div style="width:8px;height:8px;border-radius:50%;background:var(--red-alert);box-shadow:0 0 6px var(--red-alert);"></div>
+                Animal Alert
+              </div>
+            </div>
+
+            <!-- Coordinates watermark -->
+            <div style="position:absolute;bottom:10px;right:12px;font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text-muted);">
+              12.9716° N, 77.5946° E · Protected Reserve
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detection Stats Chart -->
+      <div class="glass-card mb-24">
+        <div class="card-header">
+          <div class="card-title">📊 Animal Detection Statistics (Last 7 Days)</div>
+        </div>
+        <div class="card-body">
+          <div class="chart-wrap" style="height:220px;">
+            <canvas id="wildlife-stats-chart" class="chart-canvas"></canvas>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="nav.js"></script>
+<script src="script.js"></script>
+<script>
+/* =============================================================
+   SentinelAI – wildlife.html  LIVE API INTEGRATION
+   All data from: GET http://127.0.0.1:5000/api/wildlife
+   Video stream : http://127.0.0.1:5000/video_feed/wildlife
+   Rules:
+     - Poll every 1 second
+     - Show toast ONLY when active==true AND animal changed
+     - Prevent duplicate toasts for same continuous detection
+============================================================= */
+
+// ── Static reference data (UI metadata only, NO fake conf values) ──
+const ANIMAL_META = {
+  Tiger:    { emoji:'🐅', color:'#ff2d55', species:'Panthera tigris',    threatColor:'var(--red-alert)'    },
+  Leopard:  { emoji:'🐆', color:'#ff9500', species:'Panthera pardus',    threatColor:'var(--orange-warn)'  },
+  Lion:     { emoji:'🦁', color:'#ffcc00', species:'Panthera leo',       threatColor:'var(--red-alert)'    },
+  Bear:     { emoji:'🐻', color:'#cd853f', species:'Ursus arctos',       threatColor:'var(--orange-warn)'  },
+  Elephant: { emoji:'🐘', color:'#7ab0d4', species:'Loxodonta africana', threatColor:'var(--orange-warn)'  },
+  Cheetah:  { emoji:'🐾', color:'#ff8c00', species:'Acinonyx jubatus',   threatColor:'var(--orange-warn)'  },
+};
+
+const ALL_ANIMALS = ['Tiger','Leopard','Lion','Bear','Elephant','Cheetah'];
+
+// ── Alert Persistence State ─────────────────────────────────────────
+let _lastDetectedAnimal     = '';   // dedup: which animal fired the last toast
+let _lastAlertTime          = 0;    // epoch ms of last toast
+const TOAST_COOLDOWN        = 30000; // 30 s per-animal toast cooldown
+
+// Persistent last-detection record (survives "no detection" idle frames)
+let lastDetectedAnimal      = '';   // most recent valid animal name
+let lastDetectionConfidence = 0;    // most recent valid confidence %
+let lastDetectionTime       = 0;    // epoch ms of most recent valid detection
+
+// Alert hold – keeps banner alive for ALERT_HOLD_MS after last valid frame
+const ALERT_HOLD_MS         = 10000; // 10 s minimum alert visibility
+let currentAlertAnimal      = '';    // animal currently shown in alert
+let alertStartTime          = -1;    // epoch ms when alert was first shown (-1 = unset)
+let alertVisible            = false; // true while alert is displayed
+
+// ── Upload guard flags ──────────────────────────────────────────────
+let uploadResultOpen  = false;   // true while upload result panel is shown
+let _uploadInProgress = false;   // true while an upload fetch is in flight
+
+// ── Show alert banner + detection card ────────────────────────────
+function showAlert(animal, confidence, threat, camera, timestamp) {
+  const m = ANIMAL_META[animal] || {};
+
+  // ── Always record last valid detection ──
+  lastDetectedAnimal      = animal;
+  lastDetectionConfidence = confidence;
+  lastDetectionTime       = Date.now();
+
+  // ── Intrusion banner ──
+  const banner = document.getElementById('intrusion-banner');
+  const desc   = document.getElementById('intrusion-desc');
+  if (banner) {
+    banner.style.display = 'flex';
+    const title = banner.querySelector('.intrusion-title');
+    if (title) {
+      title.textContent = `🚨 ${animal.toUpperCase()} DETECTED`;
+    }
+  }
+  if (desc)   desc.textContent =
+    `${animal} detected · ${camera} · Confidence: ${confidence}% · ${timestamp}`;
+
+  // ── Detection card ──
+  const detEmoji  = document.getElementById('det-emoji');
+  const detName   = document.getElementById('det-name');
+  const detSpec   = document.getElementById('det-species');
+  const detThreat = document.getElementById('det-threat');
+  const camLabel  = document.getElementById('det-camera');
+  if (detEmoji)  detEmoji.textContent  = m.emoji || '🐾';
+  if (detName)   detName.textContent   = animal.toUpperCase();
+  if (detSpec)   detSpec.textContent   = m.species || '';
+  if (detThreat) { detThreat.textContent = threat; detThreat.style.color = m.threatColor || 'var(--red-alert)'; }
+  if (camLabel)  camLabel.textContent  = camera;
+  setConfRing(confidence, m.color || '#ff2d55');
+
+  // ── BBox overlay ──
+  const bbox      = document.getElementById('bbox');
+  const bboxLabel = document.getElementById('bbox-label');
+  if (bbox)      bbox.style.display = 'block';
+  if (bboxLabel) bboxLabel.textContent = `${m.emoji || '🐾'} ${animal.toUpperCase()} ${confidence}%`;
+
+  // ── Counters ──
+  const objEl = document.getElementById('obj-counter');
+  if (objEl) objEl.textContent = '1';
+
+  // ── Per-animal cards ──
+  ALL_ANIMALS.forEach(n => updateAnimalCard(n, 0, '', false));
+  updateAnimalCard(animal, confidence, threat, true);
+
+  // ── Update hold-timer state ──
+  const isNewAnimal = animal !== currentAlertAnimal;
+  if (isNewAnimal || !alertVisible) {
+    alertStartTime     = Date.now(); // reset timer for new animal
+    currentAlertAnimal = animal;
+    alertVisible       = true;
+  }
+  // Same animal: leave alertStartTime unchanged (hold runs from FIRST detection)
+}
+
+// ── Clear alert banner + detection card (only after timeout) ──────
+function clearAlert() {
+  alertVisible        = false;
+  currentAlertAnimal  = '';
+  alertStartTime      = -1;    // -1 = sentinel (avoids epoch-0 == huge elapsed bug)
+  _lastDetectedAnimal = '';
+  // Note: lastDetectedAnimal / lastDetectionTime are intentionally NOT cleared
+  // so the UI can show "last seen" info even after alert expires.
+
+  const banner = document.getElementById('intrusion-banner');
+  if (banner) {
+    banner.style.display = 'none';
+    const title = banner.querySelector('.intrusion-title');
+    if (title) {
+      title.textContent = '⚠ WILDLIFE INTRUSION DETECTED';
+    }
+  }
+
+  const bbox = document.getElementById('bbox');
+  if (bbox) bbox.style.display = 'none';
+
+  const objEl = document.getElementById('obj-counter');
+  if (objEl) objEl.textContent = '0';
+
+  const detEmoji  = document.getElementById('det-emoji');
+  const detName   = document.getElementById('det-name');
+  const detSpec   = document.getElementById('det-species');
+  const detThreat = document.getElementById('det-threat');
+  if (detEmoji)  detEmoji.textContent  = '🎥';
+  if (detName)   detName.textContent   = 'NO DETECTION';
+  if (detSpec)   detSpec.textContent   = 'Scanning…';
+  if (detThreat) { detThreat.textContent = 'NONE'; detThreat.style.color = 'var(--green-safe)'; }
+  setConfRing(0, 'var(--green-safe)');
+
+  ALL_ANIMALS.forEach(n => updateAnimalCard(n, 0, '', false));
+}
+
+// ── Main poll function (called every 1 second) ──
+async function pollWildlifeAPI() {
+  if (uploadResultOpen || _uploadInProgress) {
+    return;
+  }
+  const d = await API.getWildlife();
+  if (!d) return;
+  
+  console.log('LIVE DETECTOR UPDATED', d);
+
+  const animal     = d.animal     || 'None';
+  const confidence = Math.round((d.confidence || 0) * (d.confidence <= 1 ? 100 : 1));
+  const threat     = d.threat     || 'None';
+  const active     = d.active     === true;
+  const camera     = d.camera     || 'CAM-01';
+  const timestamp  = d.timestamp  || new Date().toLocaleString('en-GB');
+
+  if (active) {
+    // ── Active detection: show alert immediately ──
+    showAlert(animal, confidence, threat, camera, timestamp);
+
+    // ── Toast dedup: fire ONCE per animal, then once per 30 s ──
+    const now = Date.now();
+    const m = ANIMAL_META[animal] || {};
+    const newAnimal = animal !== _lastDetectedAnimal;
+    if (newAnimal || (now - _lastAlertTime) > TOAST_COOLDOWN) {
+      _lastDetectedAnimal = animal;
+      _lastAlertTime      = now;
+      showToast(
+        `&#x1F6A8; ${m.emoji} ${animal} Detected`,
+        `${confidence}% confidence · ${threat} · ${camera}`,
+        'alert-critical'
+      );
+      pushRecentDetection(animal, confidence, camera, timestamp, threat);
+    }
+
+  } else {
+    // ── No active detection from this poll frame ──
+    // Guard: only apply hold logic if an alert is currently visible
+    if (!alertVisible) return;
+
+    // Guard: alertStartTime === -1 means state is unset/corrupted – do not clear
+    if (alertStartTime === -1) {
+      console.warn('Alert hold: alertStartTime is -1 (unset) – skipping clear');
+      return;
+    }
+
+    const elapsed = Date.now() - alertStartTime;
+    if (elapsed < ALERT_HOLD_MS) {
+      // Still within hold window – do NOT clear anything
+      const remaining = Math.round((ALERT_HOLD_MS - elapsed) / 1000);
+      console.log(`Alert hold [${currentAlertAnimal}]: ${remaining}s remaining`);
+      return;
+    }
+
+    // Timeout expired – now safe to clear
+    console.log(`Alert timeout expired for [${currentAlertAnimal}] after ${Math.round(elapsed / 1000)}s – clearing`);
+    clearAlert();
+  }
+}
+
+// ── Build animal status cards (skeleton, values filled by API) ──
+function buildAnimalCards() {
+  const grid = document.getElementById('animal-cards-grid');
+  if (!grid) return;
+  ALL_ANIMALS.forEach(name => {
+    const m = ANIMAL_META[name];
+    const card = document.createElement('div');
+    card.className = 'glass-card';
+    card.id = `card-${name.toLowerCase()}`;
+    card.setAttribute('data-animal', name);
+    card.style.cssText = 'padding:16px;transition:box-shadow 0.3s,border-color 0.3s;';
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+        <div style="font-size:36px;" id="emoji-${name.toLowerCase()}">${m.emoji}</div>
+        <div>
+          <div style="font-family:'Orbitron',sans-serif;font-size:13px;font-weight:700;
+                      color:var(--text-secondary);" id="name-${name.toLowerCase()}">${name.toUpperCase()}</div>
+          <div style="font-size:10px;color:var(--text-muted);font-style:italic;">${m.species}</div>
+        </div>
+        <div style="margin-left:auto;">
+          <span class="badge badge-low" id="badge-${name.toLowerCase()}">MONITORING</span>
+        </div>
+      </div>
+      <div class="conf-bar-wrap">
+        <div class="conf-bar-label">
+          <span>Confidence</span>
+          <span id="conf-val-${name.toLowerCase()}">--</span>
+        </div>
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" id="conf-bar-${name.toLowerCase()}" style="width:0%;transition:width 0.6s ease;"></div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:10px;font-size:11px;">
+        <span style="color:var(--text-muted);">Threat:
+          <strong id="threat-${name.toLowerCase()}" style="color:var(--green-safe);">CLEAR</strong>
+        </span>
+        <span id="status-${name.toLowerCase()}" style="color:var(--text-muted);font-family:'Share Tech Mono',monospace;">
+          MONITORING
+        </span>
+      </div>`;
+    grid.appendChild(card);
+  });
+}
+
+// ── Update a single animal card with live data ──
+function updateAnimalCard(name, conf, threat, isActive) {
+  const m   = ANIMAL_META[name] || {};
+  const key = name.toLowerCase();
+
+  const badge    = document.getElementById(`badge-${key}`);
+  const confVal  = document.getElementById(`conf-val-${key}`);
+  const confBar  = document.getElementById(`conf-bar-${key}`);
+  const threatEl = document.getElementById(`threat-${key}`);
+  const statusEl = document.getElementById(`status-${key}`);
+  const cardEl   = document.getElementById(`card-${key}`);
+
+  if (isActive) {
+    if (badge)    { badge.className = 'badge badge-critical'; badge.textContent = 'DETECTED'; }
+    if (confVal)  confVal.textContent = conf + '%';
+    if (confBar)  confBar.style.width = Math.min(conf, 100) + '%';
+    if (threatEl) { threatEl.textContent = threat; threatEl.style.color = m.threatColor || 'var(--red-alert)'; }
+    if (statusEl) { statusEl.textContent = 'ACTIVE'; statusEl.style.color = 'var(--red-alert)'; }
+    if (cardEl)   cardEl.classList.add('danger');
+  } else {
+    if (badge)    { badge.className = 'badge badge-low'; badge.textContent = 'MONITORING'; }
+    if (confVal)  confVal.textContent = '--';
+    if (confBar)  confBar.style.width = '0%';
+    if (threatEl) { threatEl.textContent = 'CLEAR'; threatEl.style.color = 'var(--green-safe)'; }
+    if (statusEl) { statusEl.textContent = 'MONITORING'; statusEl.style.color = 'var(--text-muted)'; }
+    if (cardEl)   cardEl.classList.remove('danger');
+  }
+}
+
+// ── Confidence ring builder ──
+function setConfRing(pct, color) {
+  const ring = document.getElementById('conf-ring');
+  if (!ring) return;
+  ring.innerHTML = buildRingSVG(pct, color) +
+    `<div class="anomaly-ring-value">
+       <div class="ring-number" style="color:${color};">${Math.round(pct)}%</div>
+       <div class="ring-label">CONFIDENCE</div>
+     </div>`;
+}
+
+// ── Push a real detection into the recent-list ──
+function pushRecentDetection(animal, conf, camera, timestamp, threat) {
+  const list = document.getElementById('wl-recent');
+  if (!list) return;
+
+  // Remove placeholder
+  const placeholder = document.getElementById('wl-no-detections');
+  if (placeholder) placeholder.remove();
+
+  const m      = ANIMAL_META[animal] || {};
+  const isHigh = threat === 'Critical';
+  const colBg  = isHigh ? 'rgba(255,45,85,0.15)' : 'rgba(255,140,0,0.15)';
+  const colBr  = isHigh ? 'rgba(255,45,85,0.3)'  : 'rgba(255,140,0,0.3)';
+  const lvlCls = isHigh ? 'critical' : 'high';
+  const timeStr = (timestamp || '').split(' ')[1]?.slice(0,5) || '--:--';
+
+  const item = document.createElement('div');
+  item.className = `alert-item ${lvlCls}`;
+  item.style.cssText = 'opacity:0;transition:opacity 0.35s;';
+  item.innerHTML = `
+    <div class="alert-icon-wrap" style="background:${colBg};border:1px solid ${colBr}">${m.emoji || '🐾'}</div>
+    <div class="alert-content">
+      <div class="alert-title">${animal} · ${conf}% confidence</div>
+      <div class="alert-meta">${camera} · ${timestamp}</div>
+    </div>
+    <div class="alert-time">${timeStr}</div>`;
+  list.prepend(item);
+  requestAnimationFrame(() => { item.style.opacity = '1'; });
+
+  // Keep max 8 entries
+  const items = list.querySelectorAll('.alert-item');
+  if (items.length > 8) items[items.length - 1].remove();
+}
+
+// ── On-Demand Monitoring Control ─────────────────────────────────
+let _wlMonitoring = false;
+
+function wlSetUIState(running) {
+  _wlMonitoring = running;
+  const btnStart  = document.getElementById('btn-wl-start');
+  const btnStop   = document.getElementById('btn-wl-stop');
+  const badge     = document.getElementById('wl-status-badge');
+  const feedImg   = document.getElementById('wl-feed-img');
+  const liveBadge = document.querySelector('.feed-live-badge');
+
+  if (running) {
+    // Start feed
+    if (feedImg && !feedImg.src.includes('/video_feed/')) {
+      feedImg.src = API.VIDEO_WILDLIFE;
+      feedImg.style.objectFit = 'cover';
+    }
+    if (btnStart) { btnStart.disabled = true;  btnStart.style.opacity = '0.5'; }
+    if (btnStop)  { btnStop.disabled  = false; btnStop.style.opacity  = '1';   }
+    if (badge)    { badge.textContent = '● LIVE'; badge.className = 'badge badge-online'; }
+    if (liveBadge) liveBadge.style.display = '';
+  } else {
+    // Stop feed – show placeholder
+    if (feedImg) {
+      if (!uploadResultOpen) {
+    feedImg.src =
+      'https://placehold.co/860x484/030c1a/00d4ff?text=Click+Start+Monitoring';
+    feedImg.style.objectFit = 'contain';
+}
+    }
+    if (btnStart) { btnStart.disabled = false; btnStart.style.opacity = '1';   }
+    if (btnStop)  { btnStop.disabled  = true;  btnStop.style.opacity  = '0.5'; }
+    if (badge)    { badge.textContent = '⏹ STOPPED'; badge.className = 'badge badge-low'; }
+    if (liveBadge) liveBadge.style.display = 'none';
+    // Only reset the FPS counter on stop; detection-state reset is owned by clearAlert()
+    document.getElementById('fps-counter') && (document.getElementById('fps-counter').textContent = '0');
+  }
+}
+
+async function wlStartMonitoring() {
+  const btn = document.getElementById('btn-wl-start');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Starting…'; }
+  const res = await API.startWildlife();
+  if (res && (res.status === 'started' || res.status === 'already_running')) {
+    wlSetUIState(true);
+    showToast('Wildlife Monitoring', 'Camera started – YOLO detection is active', 'alert-info');
+  } else {
+    if (btn) { btn.disabled = false; btn.textContent = '▶ Start Monitoring'; }
+    showToast('Start Failed', res?.error || 'Could not start wildlife detector', 'alert-high');
+  }
+}
+
+async function wlStopMonitoring() {
+  const btn = document.getElementById('btn-wl-stop');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Stopping…'; }
+  const res = await API.stopWildlife();
+  if (res && (res.status === 'stopped' || res.status === 'already_stopped')) {
+    wlSetUIState(false);
+    showToast('Wildlife Monitoring', 'Camera stopped', 'alert-info');
+  } else {
+    if (btn) { btn.disabled = false; btn.textContent = '⏹ Stop'; }
+    showToast('Stop Failed', res?.error || 'Could not stop wildlife detector', 'alert-high');
+  }
+  if (btn) btn.textContent = '⏹ Stop';
+}
+
+// ── Boot ──────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  buildAnimalCards();
+  setConfRing(0, 'var(--green-safe)');
+ if (typeof initWildlifeChart === "function") {
+    initWildlifeChart();
+}
+
+  // Sync UI button state with actual backend detector state on page load
+  try {
+    const status = await API.getStatus();
+    wlSetUIState(!!(status && status.wildlife_running));
+  } catch (_) {
+    wlSetUIState(false); // default to stopped if backend unreachable
+  }
+
+  // Start 1-second polling immediately
+  //pollWildlifeAPI();
+  //setInterval(pollWildlifeAPI, 1000);
+
+  // Wire up file inputs (use guarded binding to avoid duplicate handlers)
+  const wlImgInput = document.getElementById('wl-img-input');
+  const wlVidInput = document.getElementById('wl-vid-input');
+  if (wlImgInput) wlImgInput.addEventListener('change', handleWlImageUpload);
+  if (wlVidInput) wlVidInput.addEventListener('change', handleWlVideoUpload);
+
+  // Upload buttons – additional JS wiring
+  const btnImg = document.getElementById('btn-wl-upload-img');
+  const btnVid = document.getElementById('btn-wl-upload-vid');
+  // Only add programmatic click handlers when an inline onclick is not present
+  if (btnImg && !btnImg.getAttribute('onclick')) btnImg.addEventListener('click', () => wlImgInput && wlImgInput.click());
+  if (btnVid && !btnVid.getAttribute('onclick')) btnVid.addEventListener('click', () => wlVidInput && wlVidInput.click());
+
+  // Clear bounding box button
+  const btnClear = document.getElementById('btn-clear-bbox');
+  if (btnClear) btnClear.addEventListener('click', () => {
+    const bbox = document.getElementById('bbox');
+    if (bbox) bbox.style.display = 'none';
+  });
+
+  // Feed health check
+  initFeedHealthCheck();
+
+  // Create lightweight debug panel for job & video diagnostics (toggleable)
+  (function createWlDebugPanel(){
+    const panel = document.createElement('div');
+    panel.id = 'wl-debug-panel';
+    panel.style.cssText = `position:fixed;right:12px;bottom:12px;width:360px;max-height:40vh;overflow:auto;z-index:99999;background:rgba(2,6,12,0.85);color:#cce7ff;border:1px solid rgba(0,212,255,0.08);padding:8px;border-radius:10px;font-family:Share Tech Mono,monospace;font-size:12px;display:none;backdrop-filter:blur(6px);`;
+    panel.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <div style="font-weight:700;color:#00d4ff">WL Debug</div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button id="wl-debug-clear" style="background:transparent;border:1px solid rgba(255,255,255,0.04);color:#9fd9ff;padding:2px 6px;border-radius:6px;font-size:11px;">Clear</button>
+          <button id="wl-debug-close" style="background:transparent;border:none;color:#9fd9ff;padding:2px 6px;font-size:14px;">✕</button>
+        </div>
+      </div>
+      <div id="wl-debug-entries" style="display:flex;flex-direction:column;gap:6px;max-height:34vh;overflow:auto;padding-right:6px;"></div>
+      <div style="margin-top:6px;font-size:11px;color:var(--text-muted);">Tip: toggle with Ctrl+Shift+D</div>`;
+    document.body.appendChild(panel);
+    document.getElementById('wl-debug-close').onclick = () => panel.style.display = 'none';
+    document.getElementById('wl-debug-clear').onclick = () => { document.getElementById('wl-debug-entries').innerHTML = ''; };
+    // Toggle with keyboard shortcut
+    window.addEventListener('keydown', (ev) => { if (ev.ctrlKey && ev.shiftKey && ev.key.toLowerCase() === 'd') panel.style.display = (panel.style.display === 'none' ? 'block' : 'none'); });
+    // Expose simple logger
+    window.wlDebugLog = function(msg){
+      try {
+        const el = document.getElementById('wl-debug-entries');
+        const node = document.createElement('div');
+        node.style.cssText = 'padding:6px;border-radius:6px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.02);font-size:12px;color:#cfefff;';
+        node.textContent = typeof msg === 'string' ? msg : JSON.stringify(msg);
+        el.prepend(node);
+      } catch (_){}
+    };
+    window.wlDebugShow = function(obj){ try { window.wlDebugLog(obj); } catch(_){} };
+  })();
+});
+
+// ── Feed health check: retry MJPEG stream every 10s on error ─────
+function initFeedHealthCheck() {
+  const img = document.getElementById('wl-feed-img');
+  if (!img) return;
+  let retryTimer = null;
+
+  img.addEventListener('error', () => {
+    // Only auto-retry if we are actively monitoring
+    if (!_wlMonitoring) return;
+    if (retryTimer) return; // already waiting
+    img.src = 'https://placehold.co/860x484/030c1a/ff2d55?text=Reconnecting…';
+    img.style.objectFit = 'contain';
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      if (_wlMonitoring) {
+        img.src = API.VIDEO_WILDLIFE + '?ts=' + Date.now();
+        img.style.objectFit = 'cover';
+      }
+    }, 5000);
+  });
+}
+
+
+/* ════════════════════════════════════════════════════════════
+   UPLOAD – IMAGE  (Wildlife)
+════════════════════════════════════════════════════════════ */
+const WL_SPECIES_MAP = {
+  Tiger:'Panthera tigris', Leopard:'Panthera pardus',
+  Lion:'Panthera leo', Bear:'Ursus arctos',
+  Elephant:'Loxodonta africana', Cheetah:'Acinonyx jubatus'
+};
+const WL_EMOJI_MAP = {
+  Tiger:'🐅', Leopard:'🐆', Lion:'🦁',
+  Bear:'🐻', Elephant:'🐘', Cheetah:'🐾'
+};
+
+async function handleWlImageUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (_uploadInProgress) {
+    console.warn('Upload already in progress – ignoring duplicate trigger');
+    return;
+  }
+  e.target.value = '';   // reset so same file can be re-selected
+  _uploadInProgress = true;
+
+  console.log('UPLOAD STARTED');
+  showUploadModal('🔍 Running YOLO Detection…', file.name, 0, true);
+
+  try {
+    const result = await API.uploadWildlifeImage(file);
+    console.log('API RESPONSE RECEIVED');
+    console.log('API response:', result);
+
+    if (!result || typeof result !== 'object') {
+      throw new Error('Invalid or empty response from server');
+    }
+
+    uploadResultOpen = true;
+    window.__uploadResultOpen = true;
+    console.log('RESULT PANEL OPENED');
+    console.log('UPLOAD RESULT UPDATED');
+
+    closeUploadModal();
+
+    // ── Populate result fields ───────────────────────────────────────────────
+    const animal = result.animal || 'None';
+    const active = result.active === true;
+    document.getElementById('wl-res-emoji').textContent   = WL_EMOJI_MAP[animal]   || '🐾';
+    document.getElementById('wl-res-name').textContent    = active ? animal.toUpperCase() : 'NO DETECTION';
+    console.log('ANIMAL ASSIGNED');
+    
+    document.getElementById('wl-res-species').textContent = WL_SPECIES_MAP[animal] || '—';
+    
+    document.getElementById('wl-res-conf').textContent    = active ? result.confidence + '%' : '0%';
+    console.log('CONFIDENCE ASSIGNED');
+    
+    document.getElementById('wl-res-threat').textContent  = active ? (result.threat || '').toUpperCase() : 'CLEAR';
+    console.log('THREAT ASSIGNED');
+    
+    document.getElementById('wl-res-time').textContent    = (result.detection_time_ms ?? '—') + ' ms';
+
+    // ── Assign annotated image – single authoritative assignment ────
+    const img = document.getElementById('wl-result-img');
+    img.removeAttribute('src');                          // fully clear previous value
+    if (result.annotated_b64) {
+
+    const imageData =
+        'data:image/jpeg;base64,' + result.annotated_b64;
+
+    // Upload result panel image
+    img.src = imageData;
+
+    // ALSO show it in the main feed
+    const feedImg = document.getElementById('wl-feed-img');
+
+    if (feedImg) {
+        feedImg.src = imageData;
+        feedImg.style.objectFit = 'contain';
+    }
+
+    console.log('IMAGE ASSIGNED');
+
+      console.log('Image src assigned:', img.src.substring(0, 100));
+    } else {
+      console.warn('annotated_b64 missing in API response');
+    }
+
+    // ── Show result panel ───────────────────────────────────────────
+    const panel = document.getElementById('wl-img-result-panel');
+    panel.style.display = 'block';
+    // Persist result so it survives a full page reload
+    try { sessionStorage.setItem('sentinelai_wl_upload', JSON.stringify(result)); } catch (_) {}
+    console.log('PANEL DISPLAYED');
+    setTimeout(() => panel.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
+
+    if (active) {
+      showAlert(animal, result.confidence, result.threat || 'CRITICAL', 'UPLOAD', result.timestamp || new Date().toLocaleString('en-GB'));
+      showToast(`🎯 ${WL_EMOJI_MAP[animal] || '🐾'} ${animal} Detected`,
+        `Confidence: ${result.confidence}% · ${result.threat} Threat · ${result.detection_time_ms}ms`,
+        'alert-critical');
+    } else {
+      showToast('✅ No Wildlife Detected', `Image analysed in ${result.detection_time_ms}ms`, 'alert-info');
+    }
+  } catch (err) {
+    uploadResultOpen = false;   // release guard on failure
+    closeUploadModal();
+    console.error('Wildlife upload error:', err);
+    showToast('❌ Upload Failed', err.message || 'Server error', 'alert-high');
+  } finally {
+    _uploadInProgress = false;
+  }
+}
+
+// Restore upload result after a full page reload (sessionStorage persistence)
+try {
+  const stored = sessionStorage.getItem('sentinelai_wl_upload');
+  if (stored) {
+    const result = JSON.parse(stored);
+    // Populate same UI as handler
+    uploadResultOpen = true;
+    window.__uploadResultOpen = true;
+    document.getElementById('wl-res-emoji').textContent   = WL_EMOJI_MAP[result.animal] || '🐾';
+    document.getElementById('wl-res-name').textContent    = result.active ? (result.animal || '').toUpperCase() : 'NO DETECTION';
+    document.getElementById('wl-res-species').textContent = WL_SPECIES_MAP[result.animal] || '—';
+    document.getElementById('wl-res-conf').textContent    = result.active ? (result.confidence + '%') : '0%';
+    document.getElementById('wl-res-threat').textContent  = result.active ? (result.threat || '').toUpperCase() : 'CLEAR';
+    document.getElementById('wl-res-time').textContent    = (result.detection_time_ms ?? '—') + ' ms';
+    const img = document.getElementById('wl-result-img');
+    if (result.annotated_b64) img.src = 'data:image/jpeg;base64,' + result.annotated_b64;
+    const feedImg = document.getElementById('wl-feed-img'); if (feedImg && result.annotated_b64) { feedImg.src = 'data:image/jpeg;base64,' + result.annotated_b64; feedImg.style.objectFit='contain'; }
+    const panel = document.getElementById('wl-img-result-panel'); if (panel) panel.style.display = 'block';
+  }
+} catch (_) {}
+
+function closeWlImgResult() {
+
+  uploadResultOpen = false;
+  window.__uploadResultOpen = false;
+  _uploadInProgress = false;
+
+    document.getElementById('wl-img-result-panel').style.display = 'none';
+
+    const img = document.getElementById('wl-result-img');
+    img.removeAttribute('src');
+
+    // Restore placeholder only if monitoring is off
+    if (!_wlMonitoring) {
+        const feedImg = document.getElementById('wl-feed-img');
+        feedImg.src =
+          'https://placehold.co/860x484/030c1a/00d4ff?text=Click+Start+Monitoring';
+    }
+  try { sessionStorage.removeItem('sentinelai_wl_upload'); } catch (_) {}
+}
+
+/* ════════════════════════════════════════════════════════════
+   UPLOAD – VIDEO  (Wildlife)
+════════════════════════════════════════════════════════════ */
+async function handleWlVideoUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = '';
+
+  showUploadModal('📤 Uploading Video…', file.name, 0, false);
+
+  try {
+    const { job_id } = await API.uploadWildlifeVideo(file, (pct) => {
+      updateUploadModal(`📤 Uploading… ${pct}%`, pct);
+    });
+
+    updateUploadModal('⚙️ Processing with YOLO…', 51);
+
+    API.watchJob(job_id, {
+      onProgress: (pct) => updateUploadModal(`⚙️ YOLO processing… ${pct}%`, pct),
+      onDone: (result) => {
+        closeUploadModal();
+        renderWlVideoResult(result);
+      },
+      onError: (msg) => { 
+        uploadResultOpen = false;
+        _uploadInProgress = false;
+        closeUploadModal(); 
+        showToast('❌ Processing Failed', msg, 'alert-high'); 
+      },
+    });
+  } catch (err) {
+    uploadResultOpen = false;
+    _uploadInProgress = false;
+    closeUploadModal();
+    showToast('❌ Upload Failed', err.message || 'Server error', 'alert-high');
+  }
+}
+
+function closeWlVidResult() {
+    uploadResultOpen = false;
+    _uploadInProgress = false;
+    document.getElementById('wl-vid-result-panel').style.display = 'none';
+}
+
+function renderWlVideoResult(result) {
+  const panel    = document.getElementById('wl-vid-result-panel');
+  const videoEl  = document.getElementById('wl-result-video');
+  const detList  = document.getElementById('wl-vid-det-list');
+  const detCount = document.getElementById('wl-vid-det-count');
+  const frames   = document.getElementById('wl-vid-frames');
+
+  frames.textContent   = result.total_frames ?? '—';
+  detCount.textContent = (result.detections || []).length;
+
+  // Load processed video
+  // Prefer server-hosted URL, fallback to inlined base64 MP4 if provided
+  try {
+    if (result.processed_video_url) {
+      // normalize and build absolute URL
+      let vidPath = result.processed_video_url;
+      let url = '';
+      if (/^https?:\/\//i.test(vidPath)) {
+        url = vidPath;
+      } else {
+        url = API.BASE.replace(/\/$/, '') + '/' + String(vidPath).replace(/^\/+/, '');
+      }
+      console.log('[WL DEBUG] constructed processed video URL ->', url);
+      try { if (window.wlDebugLog) window.wlDebugLog('[WL DEBUG] constructed processed video URL -> ' + url); } catch(_){}
+      videoEl.src = url;
+      // Test accessibility with a HEAD request to help debug CORS/404
+      try {
+        fetch(url, { method: 'HEAD', mode: 'cors' }).then(resp => {
+          console.log('[WL DEBUG] HEAD', url, 'status=', resp.status, resp.type, resp.headers.get('content-type'));
+          try { if (window.wlDebugLog) window.wlDebugLog('[WL DEBUG] HEAD ' + url + ' status=' + resp.status + ' type=' + resp.type + ' content-type=' + resp.headers.get('content-type')); } catch(_){}
+          // If HEAD succeeded but browser still refuses to play, attempt fetching full file as blob and use object URL
+          if (resp.ok) {
+            fetch(url).then(r2 => {
+              if (!r2.ok) throw new Error('GET failed: ' + r2.status);
+              return r2.blob();
+            }).then(blob => {
+              try {
+                const objUrl = URL.createObjectURL(blob);
+                console.log('[WL DEBUG] fetched blob and created objectURL', objUrl);
+                videoEl.src = objUrl;
+                videoEl.load();
+              } catch (e) { console.warn('[WL DEBUG] object URL failed', e); }
+            }).catch(err => {
+              console.error('[WL DEBUG] GET fetch failed for', url, err);
+            });
+          }
+        }).catch(err => {
+          console.error('[WL DEBUG] HEAD fetch failed for', url, err);
+          try { if (window.wlDebugLog) window.wlDebugLog('[WL DEBUG] HEAD fetch failed for ' + url + ' ' + String(err)); } catch(_){}
+          // Try direct GET as fallback
+          fetch(url).then(r2 => r2.blob()).then(blob => {
+            const objUrl = URL.createObjectURL(blob);
+            videoEl.src = objUrl;
+            videoEl.load();
+          }).catch(err2 => console.error('[WL DEBUG] fallback GET failed', err2));
+        });
+      } catch (e) { console.warn('[WL DEBUG] HEAD fetch not allowed', e); }
+    } else if (result.processed_video_b64) {
+      // base64-encoded MP4 provided inline
+      videoEl.src = 'data:video/mp4;base64,' + result.processed_video_b64;
+      console.log('[WL DEBUG] using inline base64 video');
+      try { if (window.wlDebugLog) window.wlDebugLog('[WL DEBUG] using inline base64 video'); } catch(_){}
+      videoEl.load();
+    } else if (result.processed_blob_url) {
+      console.log('[WL DEBUG] using provided blob URL', result.processed_blob_url);
+      try { if (window.wlDebugLog) window.wlDebugLog('[WL DEBUG] using provided blob URL ' + result.processed_blob_url); } catch(_){}
+      videoEl.src = result.processed_blob_url;
+      videoEl.load();
+    } else {
+      console.warn('No processed video URL or base64 found in result');
+      try { if (window.wlDebugLog) window.wlDebugLog('No processed video URL or base64 found in result'); } catch(_){}
+    }
+  } catch (e) {
+    console.error('Failed to assign processed video source', e);
+  }
+
+  // Detection event list
+  detList.innerHTML = '';
+  (result.detections || []).forEach(d => {
+    const div = document.createElement('div');
+    div.style.cssText = 'padding:8px 10px;background:rgba(255,45,85,0.08);border:1px solid rgba(255,45,85,0.2);border-radius:6px;font-size:11px;';
+    div.innerHTML = `
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+        <span style="color:var(--text-primary);font-weight:600;">${WL_EMOJI_MAP[d.animal] || '🐾'} ${d.animal}</span>
+        <span style="color:var(--blue-neon);font-family:'Share Tech Mono',monospace;">Frame #${d.frame}</span>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <span style="color:var(--text-muted);">Conf: <strong style="color:var(--green-safe);">${d.confidence}%</strong></span>
+        <span style="color:var(--text-muted);">Threat: <strong style="color:var(--red-alert);">${d.threat}</strong></span>
+      </div>`;
+    detList.appendChild(div);
+  });
+
+  if (!result.detections?.length) {
+    detList.innerHTML = '<div style="color:var(--text-muted);font-size:11px;text-align:center;padding:8px;">No wildlife detected in video</div>';
+  }
+
+  panel.style.display = 'block';
+  // Mark upload result open so polls don't overwrite it
+  uploadResultOpen = true;
+  window.__uploadResultOpen = true;
+  try { sessionStorage.setItem('sentinelai_wl_video', JSON.stringify(result)); } catch (_) {}
+  // Attempt to play (may be blocked by browser autoplay policies)
+  try {
+    videoEl.muted = true;
+    videoEl.playsInline = true;
+    videoEl.setAttribute('playsinline', '');
+    videoEl.controls = true;
+    videoEl.play().catch(()=>{});
+  } catch (_) {}
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  showToast('🎬 Video Processed',
+    `${result.total_frames} frames · ${(result.detections||[]).length} detections`, 'alert-info');
+
+  // Populate job output panel with formatted JSON and processed video URL
+  try {
+    const out = document.getElementById('wl-job-output-entries');
+    if (out) {
+      out.innerHTML = '';
+      const pre = document.createElement('pre');
+      pre.style.whiteSpace = 'pre-wrap';
+      pre.style.wordBreak = 'break-word';
+      pre.textContent = JSON.stringify(result, null, 2);
+      out.appendChild(pre);
+      // Also add direct link to processed video if present
+      if (result.processed_video_url) {
+        const a = document.createElement('a');
+        a.href = (result.processed_video_url.startsWith('http') ? result.processed_video_url : (API.BASE.replace(/\/$/, '') + '/' + String(result.processed_video_url).replace(/^\/+/, '')));
+        a.target = '_blank';
+        a.textContent = 'Open processed video';
+        a.style.display = 'inline-block';
+        a.style.marginTop = '8px';
+        a.style.color = '#9fd9ff';
+        out.appendChild(a);
+      }
+    }
+  } catch (_) {}
+
+  // Auto-open debug panel and job-output for visibility
+  try { const dbg = document.getElementById('wl-debug-panel'); if (dbg) dbg.style.display = 'block'; } catch(_){}
+  // Also fetch backend debug logs and show them in job output to mirror terminal
+  try {
+    fetch(API.BASE + '/api/debug/logs?lines=200').then(r => r.json()).then(j => {
+      const out = document.getElementById('wl-job-output-entries');
+      if (out && j && j.content) {
+        const hr = document.createElement('hr'); hr.style.border = 'none'; hr.style.borderTop = '1px solid rgba(255,255,255,0.03)'; hr.style.margin = '8px 0';
+        const pre2 = document.createElement('pre'); pre2.style.whiteSpace='pre-wrap'; pre2.style.fontSize='11px'; pre2.style.color='#bfeaff'; pre2.textContent = j.content;
+        out.appendChild(hr);
+        out.appendChild(pre2);
+      }
+    }).catch(()=>{});
+  } catch(_){}
+}
+
+/* ════════════════════════════════════════════════════════════
+   SHARED UPLOAD PROGRESS MODAL
+════════════════════════════════════════════════════════════ */
+function showUploadModal(label, filename, pct = 0, indeterminate = false) {
+  let modal = document.getElementById('upload-progress-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'upload-progress-modal';
+    modal.style.cssText = `
+      position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;
+      background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);`;
+    modal.innerHTML = `
+      <div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:16px;
+                  padding:32px 40px;min-width:360px;text-align:center;box-shadow:0 0 40px rgba(0,212,255,0.2);">
+        <div style="font-size:40px;margin-bottom:12px;" id="upm-icon">⏳</div>
+        <div style="font-family:'Orbitron',sans-serif;font-size:14px;color:var(--blue-neon);margin-bottom:6px;" id="upm-label">Processing…</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;word-break:break-all;" id="upm-filename"></div>
+        <div style="background:rgba(255,255,255,0.05);border-radius:99px;height:6px;overflow:hidden;">
+          <div id="upm-bar" style="height:100%;background:linear-gradient(90deg,var(--blue-neon),var(--purple-accent));border-radius:99px;transition:width 0.3s;width:0%;"></div>
+        </div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--text-muted);margin-top:8px;" id="upm-pct">0%</div>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+  modal.style.display = 'flex';
+  document.getElementById('upm-label').textContent    = label;
+  document.getElementById('upm-filename').textContent = filename;
+  updateUploadModal(label, pct, indeterminate);
+}
+
+function updateUploadModal(label, pct, indeterminate = false) {
+  const lbl = document.getElementById('upm-label');
+  const bar = document.getElementById('upm-bar');
+  const pctEl = document.getElementById('upm-pct');
+  if (lbl)   lbl.textContent = label;
+  if (bar)   bar.style.width = indeterminate ? '60%' : pct + '%';
+  if (pctEl) pctEl.textContent = indeterminate ? 'Analysing…' : pct + '%';
+}
+
+function closeUploadModal() {
+  const modal = document.getElementById('upload-progress-modal');
+  if (modal) modal.style.display = 'none';
+}
+</script>
+</body>
+</html>

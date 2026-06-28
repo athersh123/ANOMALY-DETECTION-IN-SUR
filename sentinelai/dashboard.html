@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SentinelAI – Dashboard</title>
+  <meta name="description" content="SentinelAI main dashboard – live CCTV feeds, active alerts, system status and activity timeline.">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="api.js"></script>
+  <style>
+    /* Backend offline banner */
+    #backend-banner {
+      display: none;
+      align-items: center;
+      gap: 14px;
+      padding: 12px 20px;
+      background: rgba(255,45,85,0.10);
+      border: 1px solid rgba(255,45,85,0.45);
+      border-radius: var(--radius-md);
+      margin-bottom: 20px;
+      animation: banner-pulse 2s infinite;
+    }
+    #backend-banner .bb-icon { font-size:22px; flex-shrink:0; }
+    #backend-banner .bb-text { font-size:12px; color:var(--red-alert); flex:1; }
+    #backend-banner .bb-text strong { display:block; font-size:13px; margin-bottom:2px; font-family:'Orbitron',sans-serif; letter-spacing:1px; }
+    .live-indicator {
+      display: inline-flex; align-items:center; gap:6px;
+      font-family:'Share Tech Mono',monospace; font-size:11px;
+      color: var(--green-safe);
+    }
+    .live-indicator.offline { color: var(--red-alert); }
+    .live-indicator .li-dot {
+      width:7px; height:7px; border-radius:50%;
+      background: var(--green-safe);
+      box-shadow: 0 0 6px var(--green-safe);
+      animation: pulse-dot 1.5s infinite;
+    }
+    .live-indicator.offline .li-dot { background:var(--red-alert); box-shadow:0 0 6px var(--red-alert); animation:none; }
+  </style>
+</head>
+<body>
+
+<div class="app-shell" id="app-shell">
+  <!-- Nav injected by nav.js -->
+  <div class="main-content">
+    <!-- Topbar injected by nav.js -->
+
+    <div class="page-content">
+
+      <!-- ─── Backend Offline Banner ──────────────────────── -->
+      <div id="backend-banner">
+        <div class="bb-icon">⚠️</div>
+        <div class="bb-text">
+          <strong>BACKEND OFFLINE</strong>
+          Flask server not reachable at localhost:5000 · Showing demo data ·
+          <a href="#" onclick="window.open('START_BACKEND.bat')" style="color:var(--blue-neon);">Start Backend</a>
+        </div>
+        <div class="live-indicator offline" id="conn-indicator">
+          <div class="li-dot"></div> OFFLINE
+        </div>
+      </div>
+
+      <!-- ─── Page Header ─────────────────────────────────── -->
+      <div class="page-header animate-fadeInUp">
+        <div class="page-header-left">
+          <div class="page-header-title">Operations Dashboard</div>
+          <div class="page-header-sub">Real-time AI Surveillance Overview · Last updated: <span id="last-updated">—</span></div>
+        </div>
+        <div class="flex gap-12" style="align-items:center;">
+          <button class="btn btn-ghost btn-sm" onclick="location.reload()">↻ Refresh</button>
+          <button class="btn btn-primary btn-sm">⬇ Export Report</button>
+        </div>
+      </div>
+
+      <!-- ─── KPI Stats Row ────────────────────────────────── -->
+      <div class="stats-grid stagger mb-24">
+        <div class="glass-card stat-card">
+          <div class="stat-icon blue">📷</div>
+          <div class="stat-value blue" id="stat-cameras">24</div>
+          <div class="stat-label">Total Cameras</div>
+          <div class="stat-change up" id="stat-cameras-sub">▲ Network Active</div>
+        </div>
+        <div class="glass-card stat-card danger">
+          <div class="stat-icon red">🚨</div>
+          <div class="stat-value red" id="stat-alerts">—</div>
+          <div class="stat-label">Active Alerts</div>
+          <div class="stat-change down" id="stat-alerts-sub">Loading…</div>
+        </div>
+        <div class="glass-card stat-card">
+          <div class="stat-icon orange">🐾</div>
+          <div class="stat-value orange" id="stat-wildlife">—</div>
+          <div class="stat-label">Wildlife Alerts</div>
+          <div class="stat-change" id="stat-wildlife-sub">Loading…</div>
+        </div>
+        <div class="glass-card stat-card">
+          <div class="stat-icon yellow">👁️</div>
+          <div class="stat-value yellow" id="stat-human">—</div>
+          <div class="stat-label">Human Anomalies</div>
+          <div class="stat-change" id="stat-human-sub">Loading…</div>
+        </div>
+        <div class="glass-card stat-card">
+          <div class="stat-icon green">✅</div>
+          <div class="stat-value green" id="stat-models">—</div>
+          <div class="stat-label">AI Models</div>
+          <div class="stat-change up" id="stat-models-sub">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ─── Main Grid: Feed + Recent Alerts ─────────────── -->
+      <div class="dashboard-grid mb-24">
+
+        <!-- Left: Live Feed + Activity -->
+        <div class="flex flex-col gap-16">
+
+          <!-- Live CCTV Feed -->
+          <div class="glass-card">
+            <div class="card-header">
+              <div class="card-title">📡 Live Camera Feeds</div>
+              <div class="flex gap-8 items-center">
+                <div class="live-indicator" id="feed-live-status">
+                  <div class="li-dot"></div> LIVE
+                </div>
+                <select id="cam-select" style="background:var(--bg-glass);border:1px solid var(--border-glass);color:var(--text-secondary);border-radius:6px;padding:4px 10px;font-size:12px;font-family:inherit;">
+                  <option value="wildlife">CAM-01 · Wildlife Detection</option>
+                  <option value="anomaly">CAM-02 · Human Anomaly</option>
+                </select>
+                <span class="badge badge-online" id="feed-status-badge">🟢 Online</span>
+              </div>
+            </div>
+            <div class="card-body" style="padding:16px;">
+              <!-- LIVE MJPEG STREAM from Flask -->
+              <div class="feed-container" id="main-feed" style="background:#000;">
+                <img
+                  id="main-feed-img"
+                  src="http://localhost:5000/video_feed/wildlife"
+                  alt="Live Detection Feed"
+                  class="feed-img"
+                  style="width:100%;height:100%;object-fit:cover;"
+                  onerror="this.src='https://placehold.co/900x506/030c1a/00d4ff?text=Backend+Offline'; this.style.objectFit='contain'; document.getElementById('feed-live-status').className='live-indicator offline'; document.getElementById('feed-status-badge').className='badge badge-offline'; document.getElementById('feed-status-badge').textContent='⚠ Backend Offline';"
+                >
+                <div class="feed-overlay" style="pointer-events:none;"></div>
+                <div class="feed-hud">
+                  <div class="feed-corners">
+                    <div class="corner corner-tl"></div>
+                    <div class="corner corner-tr"></div>
+                    <div class="corner corner-bl"></div>
+                    <div class="corner corner-br"></div>
+                  </div>
+                  <div class="feed-info-top">
+                    <div class="feed-cam-id" id="feed-cam-label">CAM-01 · WILDLIFE DETECTION</div>
+                    <div class="feed-live-badge"><span class="live-dot"></span> LIVE</div>
+                  </div>
+                  <div class="feed-info-bottom">
+                    <div class="feed-timestamp"></div>
+                    <div id="feed-model-label" style="font-family:'Share Tech Mono',monospace;font-size:10px;color:rgba(255,255,255,0.7);background:rgba(0,0,0,0.6);padding:3px 8px;border-radius:4px;">
+                      YOLOv8 · Live
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Feed Controls -->
+              <!-- Live Detection Overlay Badges -->
+              <div id="live-detection-bar" style="display:none;margin:10px 0 6px;padding:10px 14px;background:rgba(255,45,85,0.1);border:1px solid rgba(255,45,85,0.35);border-radius:var(--radius-md);display:flex;align-items:center;gap:14px;">
+                <span style="font-size:24px;" id="dash-det-emoji">🐅</span>
+                <div style="flex:1;">
+                  <div style="font-family:'Orbitron',sans-serif;font-size:13px;font-weight:700;color:var(--red-alert);" id="dash-det-name">—</div>
+                  <div style="font-size:11px;color:var(--text-muted);" id="dash-det-meta">Waiting for detection…</div>
+                </div>
+                <div style="text-align:right;">
+                  <div style="font-family:'Share Tech Mono',monospace;font-size:20px;font-weight:700;color:var(--blue-neon);" id="dash-det-conf">—</div>
+                  <div style="font-size:9px;color:var(--text-muted);">CONFIDENCE</div>
+                </div>
+                <span class="badge badge-critical" id="dash-det-threat" style="display:none;">CRITICAL</span>
+              </div>
+
+              <div class="flex items-center justify-between" style="margin-top:12px;flex-wrap:wrap;gap:8px;">
+                <div class="flex gap-8">
+                  <button class="btn btn-ghost btn-sm" id="btn-cam-wildlife" onclick="switchFeed('wildlife',this)">🐾 Wildlife Cam</button>
+                  <button class="btn btn-ghost btn-sm" id="btn-cam-anomaly" onclick="switchFeed('anomaly',this)">👁 Anomaly Cam</button>
+                </div>
+                <div class="flex gap-8">
+                  <span id="dash-anomaly-badge" style="font-size:12px;color:var(--green-safe);font-family:'Share Tech Mono',monospace;">Normal Activity</span>
+                  <button class="btn btn-danger btn-sm" id="btn-raise-alert" onclick="showToast('🚨 Alert Raised','Security team notified via SMS and email','alert-critical')">⚡ Raise Alert</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Activity Timeline -->
+          <div class="glass-card">
+            <div class="card-header">
+              <div class="card-title">📅 Live Activity Timeline</div>
+              <span class="badge badge-info" id="timeline-badge">Live</span>
+            </div>
+            <div class="card-body">
+              <div class="timeline" id="timeline-list">
+                <!-- Populated in real-time from API polling -->
+                <div style="padding:16px;text-align:center;font-size:12px;color:var(--text-muted);" id="timeline-placeholder">
+                  Waiting for live detections…
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Right: Recent Alerts Panel -->
+        <div class="flex flex-col gap-16">
+
+          <!-- Threat Level Gauge -->
+          <div class="glass-card">
+            <div class="card-header">
+              <div class="card-title">⚡ Threat Level</div>
+            </div>
+            <div class="card-body text-center" style="padding:16px;">
+              <div style="position:relative;width:140px;height:140px;margin:0 auto 12px;">
+                <svg viewBox="0 0 140 140" style="width:100%;transform:rotate(-90deg)">
+                  <circle cx="70" cy="70" r="56" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="12"/>
+                  <circle cx="70" cy="70" r="56" fill="none" stroke="url(#threat-grad)" stroke-width="12"
+                          stroke-linecap="round" stroke-dasharray="246 352" id="threat-arc"
+                          style="filter:drop-shadow(0 0 8px #ff2d55)"/>
+                  <defs>
+                    <linearGradient id="threat-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stop-color="#ffcc00"/>
+                      <stop offset="100%" stop-color="#ff2d55"/>
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+                  <div style="font-family:'Orbitron',sans-serif;font-size:24px;font-weight:800;color:#00ff88;text-shadow:0 0 20px rgba(0,255,136,0.5);" id="threat-pct">0%</div>
+                  <div style="font-size:10px;color:var(--text-muted);letter-spacing:1px;">THREAT</div>
+                </div>
+              </div>
+              <div style="font-family:'Orbitron',sans-serif;font-size:13px;font-weight:700;color:var(--green-safe);letter-spacing:2px;" id="threat-label">ALL CLEAR</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:4px;" id="threat-sub">No active threats</div>
+            </div>
+          </div>
+
+          <!-- Recent Alerts -->
+          <div class="glass-card" style="flex:1;">
+            <div class="card-header">
+              <div class="card-title">🚨 Recent Alerts</div>
+              <a href="alerts.html" class="btn btn-ghost btn-sm">View All</a>
+            </div>
+            <div class="card-body" style="padding:12px;max-height:460px;overflow-y:auto;">
+              <div class="alert-list" id="recent-alerts-list">
+                <!-- Populated in real-time from /api/wildlife and /api/anomaly polling -->
+                <div style="padding:16px;text-align:center;font-size:12px;color:var(--text-muted);" id="dash-no-alerts">
+                  Waiting for live detections…
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mini Stats -->
+          <div class="glass-card">
+            <div class="card-header">
+              <div class="card-title">📊 Today's Summary</div>
+            </div>
+            <div class="card-body" style="padding:14px;">
+              <div class="conf-bar-wrap">
+                <div class="conf-bar-label"><span>Wildlife Detections</span><span id="summary-wildlife">12</span></div>
+                <div class="conf-bar-track"><div class="conf-bar-fill danger" id="summary-wildlife-bar" style="width:0%"></div></div>
+              </div>
+              <div class="conf-bar-wrap">
+                <div class="conf-bar-label"><span>Human Anomalies</span><span id="summary-human">8</span></div>
+                <div class="conf-bar-track"><div class="conf-bar-fill warn" id="summary-human-bar" style="width:0%"></div></div>
+              </div>
+              <div class="conf-bar-wrap">
+                <div class="conf-bar-label"><span>False Positives</span><span id="summary-fp">3</span></div>
+                <div class="conf-bar-track"><div class="conf-bar-fill" id="summary-fp-bar" style="width:0%"></div></div>
+              </div>
+              <div class="conf-bar-wrap">
+                <div class="conf-bar-label"><span>Resolved Alerts</span><span id="summary-resolved">14</span></div>
+                <div class="conf-bar-track"><div class="conf-bar-fill" id="summary-resolved-bar" style="width:0%"></div></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ─── Bottom Charts Row ─────────────────────────────── -->
+      <div class="grid-2 mb-24">
+        <div class="glass-card">
+          <div class="card-header">
+            <div class="card-title">📈 24H Alert Frequency</div>
+            <span class="badge badge-info">Live</span>
+          </div>
+          <div class="card-body">
+            <div class="chart-wrap" style="height:200px;">
+              <canvas id="alert-freq-chart" class="chart-canvas"></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="glass-card">
+          <div class="card-header">
+            <div class="card-title">🍩 Alert Distribution</div>
+          </div>
+          <div class="card-body">
+            <div class="chart-wrap" style="height:200px;">
+              <canvas id="dist-chart" class="chart-canvas"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── Camera Grid Overview ──────────────────────────── -->
+      <div class="glass-card mb-24">
+        <div class="card-header">
+          <div class="card-title">📷 Camera Network Overview</div>
+          <div class="flex gap-8">
+            <span class="badge badge-online">🟢 22 Online</span>
+            <span class="badge badge-offline">🔴 2 Offline</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="camera-grid" id="mini-cam-grid"></div>
+        </div>
+      </div>
+
+    </div><!-- end page-content -->
+  </div><!-- end main-content -->
+</div><!-- end app-shell -->
+
+<script src="nav.js"></script>
+<script src="script.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  // Update last-updated
+  document.getElementById('last-updated').textContent = new Date().toLocaleTimeString('en-GB', { hour12: false });
+
+  // Alert freq chart
+  const hours = ['02','04','06','08','10','12','14','16','18','20','22','00'];
+  createLineChart('alert-freq-chart', hours, [
+    {
+      label: 'Wildlife Alerts',
+      data: [1,0,2,3,5,4,7,6,3,2,1,1],
+      borderColor: '#ff6b35',
+      backgroundColor: 'rgba(255,107,53,0.1)',
+      fill: true,
+      tension: 0.4,
+    },
+    {
+      label: 'Human Anomalies',
+      data: [0,0,1,2,3,5,4,8,6,4,2,1],
+      borderColor: '#00d4ff',
+      backgroundColor: 'rgba(0,212,255,0.08)',
+      fill: true,
+      tension: 0.4,
+    },
+  ]);
+
+  // Distribution doughnut
+  createDoughnutChart('dist-chart',
+    ['Tiger', 'Elephant', 'Leopard', 'Wildlife', 'Human', 'Vehicle', 'Other'],
+    [5, 3, 2, 4, 3, 2, 4],
+    ['#ff6b35','#7ab0d4','#ff9500','#ff2d55','#00d4ff','#ff2d55','#3d6b8f']
+  );
+
+  // Mini camera grid
+  const grid = document.getElementById('mini-cam-grid');
+  const camNames = ['N.Perimeter','E.Gate','S.Forest','W.Bound','Vil.Entry','Water Hole','Forest Edge','Road Cross','Hill Top','River Bank','Patrol A','Patrol B'];
+  const seeds = ['forest1','gate2','jungle3','wild4','village5','water6','tree7','road8','hill9','river10','patrol11','path12'];
+  const offline = [4, 9]; // indices
+  if (grid) {
+    camNames.forEach((name, i) => {
+      const isOff = offline.includes(i);
+      grid.innerHTML += `
+        <div class="camera-card glass-card" style="cursor:pointer;" onclick="window.location='cameras.html'">
+          <div class="camera-thumb">
+            <img src="https://picsum.photos/seed/${seeds[i]}/220/138" alt="CAM-${String(i+1).padStart(2,'0')}" style="width:100%;height:100%;object-fit:cover;opacity:${isOff?0.2:0.8};${isOff?'filter:grayscale(1);':''}">
+            <div class="camera-thumb-overlay"></div>
+            ${isOff?`<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--red-alert);font-family:'Orbitron',sans-serif;font-size:11px;font-weight:700;letter-spacing:1px;">NO SIGNAL</div>`:''}
+            <div style="position:absolute;top:6px;right:6px;">
+              <span class="badge ${isOff?'badge-offline':'badge-online'}" style="font-size:9px;">${isOff?'OFFLINE':'LIVE'}</span>
+            </div>
+          </div>
+          <div class="camera-meta">
+            <div class="camera-id">CAM-${String(i+1).padStart(2,'0')}</div>
+            <div class="camera-location">${name}</div>
+          </div>
+        </div>
+      `;
+    });
+  }
+
+  // Listen for new alerts and add to list
+  document.addEventListener('newAlert', (e) => {
+    const al = e.detail;
+    const list = document.getElementById('recent-alerts-list');
+    if (!list) return;
+    const div = renderAlertItem(al);
+    div.style.opacity = '0';
+    div.style.transform = 'translateX(20px)';
+    list.prepend(div);
+    requestAnimationFrame(() => {
+      div.style.transition = 'all 0.4s ease';
+      div.style.opacity = '1';
+      div.style.transform = 'translateX(0)';
+    });
+    // Update stat
+    const statEl = document.getElementById('stat-alerts');
+    if (statEl) statEl.textContent = parseInt(statEl.textContent || 0) + 1;
+    // Remove oldest if > 10
+    const items = list.querySelectorAll('.alert-item');
+    if (items.length > 10) items[items.length-1].remove();
+  });
+
+  // Feed switcher (Wildlife / Anomaly)
+  document.getElementById('cam-select')?.addEventListener('change', function () {
+    switchFeed(this.value);
+  });
+});
+
+/* ── Live feed switcher ────────────────────────────────────── */
+function switchFeed(type) {
+  const img   = document.getElementById('main-feed-img');
+  const label = document.getElementById('feed-cam-label');
+  const mlbl  = document.getElementById('feed-model-label');
+  if (type === 'wildlife') {
+    if (img)   img.src = 'http://localhost:5000/video_feed/wildlife';
+    if (label) label.textContent = 'CAM-01 · WILDLIFE DETECTION';
+    if (mlbl)  mlbl.textContent  = 'YOLOv8 · Live';
+  } else {
+    if (img)   img.src = 'http://localhost:5000/video_feed/anomaly';
+    if (label) label.textContent = 'CAM-02 · HUMAN ANOMALY';
+    if (mlbl)  mlbl.textContent  = 'AutoEncoder · Live';
+  }
+}
+
+/* ── Live Data Polling ─────────────────────────────────────── */
+const ANIMAL_EMOJIS = {
+  Tiger:'🐅', Leopard:'🐆', Lion:'🦁',
+  Bear:'🐻', Elephant:'🐘', Cheetah:'🐾', None:'🎥'
+};
+const ANOMALY_EMOJIS = {
+  'Normal':'✅','Suspicious Activity':'👤','Suspicious':'👤','Anomaly Detected':'🚨','Anomaly':'🚨'
+};
+
+let _lastWildlifeTs = '';
+let _lastAnomalyTs  = '';
+let _alertCache     = [];
+
+/* Update KPI cards from /api/status */
+async function updateStatus() {
+  const d = await API.getStatus();
+  if (!d) return;
+
+  // Hide offline banner
+  const banner = document.getElementById('backend-banner');
+  if (banner) banner.style.display = 'none';
+
+  document.getElementById('stat-alerts').textContent     = d.active_alerts ?? '—';
+  document.getElementById('stat-wildlife').textContent   = d.wildlife_alerts ?? '—';
+  document.getElementById('stat-human').textContent      = d.human_anomalies ?? '—';
+
+  const wOnline = d.wildlife_detector === 'online';
+  const aOnline = d.anomaly_detector  === 'online';
+  document.getElementById('stat-models').textContent     = (wOnline && aOnline) ? '2 / 2' : (wOnline || aOnline ? '1 / 2' : '0 / 2');
+  document.getElementById('stat-models-sub').textContent = (wOnline && aOnline) ? '▲ YOLO + Autoencoder Active' : '⚠ Check backend';
+
+  document.getElementById('stat-alerts-sub').textContent  = `Critical: ${d.active_alerts} detected`;
+  document.getElementById('stat-wildlife-sub').textContent = `▲ Total today: ${d.wildlife_alerts}`;
+  document.getElementById('stat-human-sub').textContent    = `▲ Total today: ${d.human_anomalies}`;
+  document.getElementById('last-updated').textContent = new Date().toLocaleTimeString('en-GB');
+
+  // Update Today's Summary
+  const wlAlerts = d.wildlife_alerts ?? 0;
+  const huAlerts = d.human_anomalies ?? 0;
+  const totAlerts = wlAlerts + huAlerts;
+  const activeAlerts = d.active_alerts ?? 0;
+
+  const resolved = Math.max(0, totAlerts - activeAlerts);
+  const fp = Math.round(totAlerts * 0.15); // mock fp rate
+
+  const maxVal = Math.max(20, totAlerts, resolved);
+
+  const wlPct = Math.round((wlAlerts / maxVal) * 100);
+  const huPct = Math.round((huAlerts / maxVal) * 100);
+  const fpPct = Math.round((fp / maxVal) * 100);
+  const rePct = Math.round((resolved / maxVal) * 100);
+
+  const wlEl = document.getElementById('summary-wildlife');
+  if (wlEl) wlEl.textContent = wlAlerts;
+  const wlBar = document.getElementById('summary-wildlife-bar');
+  if (wlBar) wlBar.style.width = wlPct + '%';
+
+  const huEl = document.getElementById('summary-human');
+  if (huEl) huEl.textContent = huAlerts;
+  const huBar = document.getElementById('summary-human-bar');
+  if (huBar) huBar.style.width = huPct + '%';
+
+  const fpEl = document.getElementById('summary-fp');
+  if (fpEl) fpEl.textContent = fp;
+  const fpBar = document.getElementById('summary-fp-bar');
+  if (fpBar) fpBar.style.width = fpPct + '%';
+
+  const reEl = document.getElementById('summary-resolved');
+  if (reEl) reEl.textContent = resolved;
+  const reBar = document.getElementById('summary-resolved-bar');
+  if (reBar) reBar.style.width = rePct + '%';
+}
+
+/* Update wildlife detection bar */
+async function updateWildlife() {
+  const d = await API.getWildlife();
+  if (!d) return;
+
+  if (d.timestamp === _lastWildlifeTs) return;
+  _lastWildlifeTs = d.timestamp;
+
+  const bar        = document.getElementById('live-detection-bar');
+  const nameEl     = document.getElementById('dash-det-name');
+  const metaEl     = document.getElementById('dash-det-meta');
+  const confEl     = document.getElementById('dash-det-conf');
+  const emojiEl    = document.getElementById('dash-det-emoji');
+  const threatEl   = document.getElementById('dash-det-threat');
+
+  if (d.active) {
+    if (bar) bar.style.display = 'flex';
+    if (emojiEl)  emojiEl.textContent  = ANIMAL_EMOJIS[d.animal] || '🐾';
+    if (nameEl)   nameEl.textContent   = d.animal + ' DETECTED';
+    if (metaEl)   metaEl.textContent   = `${d.camera} · ${d.timestamp} · ${d.threat} Threat`;
+    if (confEl)   confEl.textContent   = d.confidence + '%';
+    if (threatEl) { threatEl.style.display = 'inline-flex'; threatEl.textContent = d.threat.toUpperCase(); }
+
+    // Update threat gauge
+    const pct = Math.min(d.confidence, 100);
+    const arc  = document.getElementById('threat-arc');
+    if (arc) {
+      const circ = 2 * Math.PI * 56;
+      arc.setAttribute('stroke-dasharray', `${(pct/100)*circ} ${circ}`);
+    }
+    const pctEl = document.getElementById('threat-pct');
+    if (pctEl) { pctEl.textContent = pct + '%'; pctEl.style.color = d.threat === 'Critical' ? '#ff2d55' : '#ff8c00'; }
+    const lblEl = document.getElementById('threat-label');
+    if (lblEl) { lblEl.textContent = d.threat === 'Critical' ? 'CRITICAL ALERT' : d.threat.toUpperCase() + ' ALERT'; lblEl.style.color = d.threat === 'Critical' ? 'var(--red-alert)' : 'var(--orange-warn)'; }
+    const subEl = document.getElementById('threat-sub');
+    if (subEl) subEl.textContent = `${d.animal} detected · ${d.camera}`;
+
+    // Push to recent alerts list
+    pushToAlertList({
+      title: `${ANIMAL_EMOJIS[d.animal]} ${d.animal} detected`,
+      loc:   d.camera + ' · Wildlife',
+      level: d.threat === 'Critical' ? 'critical' : 'high',
+      time:  d.timestamp.split(' ')[1]?.substr(0,5) || '',
+      icon:  ANIMAL_EMOJIS[d.animal],
+    });
+    // Timeline
+    pushTimeline(ANIMAL_EMOJIS[d.animal], `${d.animal} Detected · ${d.camera}`,
+      `Conf: ${d.confidence}% · Threat: ${d.threat}`, 'red');
+  } else {
+    if (bar && !document.getElementById('anom-active-flag')) bar.style.display = 'none';
+    if (threatEl) threatEl.style.display = 'none';
+    // Reset threat gauge to 0
+    const pctEl2 = document.getElementById('threat-pct');
+    if (pctEl2) { pctEl2.textContent = '0%'; pctEl2.style.color = '#00ff88'; }
+    const lblEl2 = document.getElementById('threat-label');
+    if (lblEl2) { lblEl2.textContent = 'ALL CLEAR'; lblEl2.style.color = 'var(--green-safe)'; }
+    const subEl2 = document.getElementById('threat-sub');
+    if (subEl2) subEl2.textContent = 'No active threats';
+    const arc2 = document.getElementById('threat-arc');
+    if (arc2) arc2.setAttribute('stroke-dasharray', '0 352');
+  }
+}
+
+/* Update anomaly detection */
+async function updateAnomaly() {
+  const d = await API.getAnomaly();
+  if (!d) return;
+  if (d.timestamp === _lastAnomalyTs) return;
+  _lastAnomalyTs = d.timestamp;
+
+  const badgeEl = document.getElementById('dash-anomaly-badge');
+  if (badgeEl) {
+    badgeEl.textContent  = d.active ? `⚠ ${d.anomaly_type}` : '✅ Normal Activity';
+    badgeEl.style.color  = d.active ? 'var(--red-alert)' : 'var(--green-safe)';
+  }
+
+  if (d.active) {
+    pushToAlertList({
+      title: `${ANOMALY_EMOJIS[d.anomaly_type] || '⚠️'} ${d.anomaly_type}`,
+      loc:   d.camera + ' · Anomaly',
+      level: d.status === 'Anomaly' ? 'critical' : 'high',
+      time:  d.timestamp.split(' ')[1]?.substr(0,5) || '',
+      icon:  ANOMALY_EMOJIS[d.anomaly_type] || '⚠️',
+    });
+    pushTimeline(ANOMALY_EMOJIS[d.anomaly_type] || '⚠️',
+      `${d.anomaly_type} · ${d.camera}`,
+      `Score: ${d.score} · Error: ${d.error}`, 'red');
+  }
+}
+
+/* Push entry into recent-alerts-list */
+function pushToAlertList(a) {
+  const list = document.getElementById('recent-alerts-list');
+  if (!list) return;
+  // Remove placeholder
+  const ph = document.getElementById('dash-no-alerts');
+  if (ph) ph.remove();
+  const iconBg  = a.level === 'critical' ? 'rgba(255,45,85,0.15)' : 'rgba(255,140,0,0.15)';
+  const iconBr  = a.level === 'critical' ? 'rgba(255,45,85,0.3)'  : 'rgba(255,140,0,0.3)';
+  const div = document.createElement('div');
+  div.className = `alert-item ${a.level}`;
+  div.style.cssText = 'opacity:0;transform:translateX(15px);transition:all 0.35s ease;';
+  div.innerHTML = `
+    <div class="alert-icon-wrap" style="background:${iconBg};border:1px solid ${iconBr}">${a.icon}</div>
+    <div class="alert-content">
+      <div class="alert-title">${a.title}</div>
+      <div class="alert-meta"><span>${a.loc}</span></div>
+    </div>
+    <div class="alert-time">${a.time}</div>`;
+  list.prepend(div);
+  requestAnimationFrame(() => { div.style.opacity='1'; div.style.transform='translateX(0)'; });
+  const items = list.querySelectorAll('.alert-item');
+  if (items.length > 8) items[items.length-1].remove();
+}
+
+/* Push entry into activity timeline */
+function pushTimeline(icon, title, desc, color) {
+  const tl = document.getElementById('timeline-list');
+  if (!tl) return;
+  // Remove placeholder
+  const ph = document.getElementById('timeline-placeholder');
+  if (ph) ph.remove();
+  const now = new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const item = document.createElement('div');
+  item.className = 'timeline-item';
+  item.style.cssText = 'opacity:0;transition:opacity 0.4s ease;';
+  item.innerHTML = `
+    <div class="timeline-dot ${color}">${icon}</div>
+    <div class="timeline-body">
+      <div class="timeline-title">${title}</div>
+      <div class="timeline-desc">${desc}</div>
+      <div class="timeline-time">${now}</div>
+    </div>`;
+  tl.prepend(item);
+  requestAnimationFrame(() => { item.style.opacity='1'; });
+  const items = tl.querySelectorAll('.timeline-item');
+  if (items.length > 10) items[items.length-1].remove();
+}
+
+/* Start polling */
+async function startLivePolling() {
+  // Check backend
+  const ok = await API.checkBackend();
+  if (!ok) {
+    const banner = document.getElementById('backend-banner');
+    if (banner) banner.style.display = 'flex';
+  }
+  // Poll every second
+  setInterval(async () => {
+    await updateStatus();
+    await updateWildlife();
+    await updateAnomaly();
+  }, 1000);
+}
+
+// Kick off polling after page load
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(startLivePolling, 800);
+});
+</script>
+</body>
+</html>
